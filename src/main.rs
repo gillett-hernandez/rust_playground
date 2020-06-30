@@ -113,7 +113,7 @@ fn main() {
                 film.buffer[y * film.width + x] += triplet;
                 // thread::sleep(Duration::from_millis(10));
             }
-            if let Ok(v) = rx.recv_timeout(Duration::from_secs(1)) {
+            if let Ok(v) = rx.recv_timeout(Duration::from_millis(200)) {
                 let (sw, (pixel, film_id)): ((f32, f32), ((f32, f32), usize)) = v;
                 let film = &mut films[film_id];
                 let triplet = sw_to_triplet(sw);
@@ -139,7 +139,7 @@ fn main() {
     for _i in 0..20 {
         let tx1 = mpsc::Sender::clone(&tx);
         handles.push(thread::spawn(move || {
-            for _ in 0..10000 {
+            for _ in 0..1000000 {
                 let random_pixel: (f32, f32) = (random(), random());
                 let sw = (
                     370.0f32 + random::<f32>() * 410.0f32,
