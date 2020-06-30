@@ -94,13 +94,25 @@ fn main() {
     }
 
     let (tx, rx) = mpsc::channel();
-    let done_splatting = Arc::new(AtomicBool::new(false));
+    // let done_splatting = Arc::new(AtomicBool::new(false));
 
-    let done_splatting_clone = done_splatting.clone();
+    // let done_splatting_clone = done_splatting.clone();
     let light_films_ref = Arc::clone(&light_films);
     let splatting_thread = thread::spawn(move || {
         let films = &mut light_films_ref.lock().unwrap();
         loop {
+            for v in rx.try_iter() {
+                let (sw, (pixel, film_id)): ((f32, f32), ((f32, f32), usize)) = v;
+                let film = &mut films[film_id];
+                let triplet = sw_to_triplet(sw);
+                let (x, y) = (
+                    (pixel.0 * film.width as f32) as usize,
+                    (pixel.1 * film.height as f32) as usize,
+                );
+                // let existing_triplet = film.buffer[y * film.width + x];
+                film.buffer[y * film.width + x] += triplet;
+                // thread::sleep(Duration::from_millis(10));
+            }
             if let Ok(v) = rx.recv_timeout(Duration::from_secs(1)) {
                 let (sw, (pixel, film_id)): ((f32, f32), ((f32, f32), usize)) = v;
                 let film = &mut films[film_id];
@@ -111,10 +123,10 @@ fn main() {
                 );
                 // let existing_triplet = film.buffer[y * film.width + x];
                 film.buffer[y * film.width + x] += triplet;
-            // thread::sleep(Duration::from_millis(10));
             } else {
                 break;
             }
+
             // if done_splatting_clone.load(Ordering::Acquire) {
             //     println!("broke because done splatting?");
             //     break;
@@ -148,7 +160,7 @@ fn main() {
     for handle in handles {
         handle.join().expect("thread panic!");
     }
-    done_splatting.clone().store(true, Ordering::SeqCst);
+    // done_splatting.clone().store(true, Ordering::SeqCst);
     if let Err(panic) = splatting_thread.join() {
         println!("panic occurred within thread: {:?}", panic);
     }
