@@ -1,0 +1,4 @@
+*.exr
+*.png
+target/*
+Cargo.lock
