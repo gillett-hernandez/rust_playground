@@ -1,9 +1,7 @@
-mod film;
-
-use film::Film;
-
 // use rayon::iter::ParallelIterator;
 // use rayon::prelude::*;
+
+use lib::Film;
 
 use nalgebra::{Matrix3, Vector3};
 use packed_simd::f32x4;
