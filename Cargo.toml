@@ -7,12 +7,12 @@ edition = "2018"
 
 [dependencies]
 itertools = "0.9.0"
-rayon = "1.4.0"
+rayon = "1.4.1"
 # toml = "0.5"
 num_cpus = "1.13.0"
 # serde = { version = "1.0.114", features = ["derive"] }
 rand = "0.7"
-image = "0.23.6"
+image = "0.23.10"
 packed_simd = "0.3.3"
 nalgebra = "0.22"
 crossbeam = "0.7.3"
@@ -20,6 +20,7 @@ parking_lot = "0.11.0"
 # ordered-float = "1.0.2"
 exr = "0.9.0"
 # pbr = "1.0.3"
+minifb = "0.19.1"
 
 [build-dependencies]
 serde = { version = "1.0.114", features = ["derive"] }
@@ -37,14 +38,18 @@ opt-level = 0
 name = "lib"
 path = "src/lib.rs"
 
-[[bin]]
-name = "splat"
-path = "src/bin/splat.rs"
+# [[bin]]
+# name = "splat"
+# path = "src/bin/splat.rs"
 
-[[bin]]
-name = "splat_v2"
-path = "src/bin/splat_v2.rs"
+# [[bin]]
+# name = "splat_v2"
+# path = "src/bin/splat_v2.rs"
 
-[[bin]]
-name = "sim"
-path = "src/bin/sim.rs"
+# [[bin]]
+# name = "sim"
+# path = "src/bin/sim.rs"
+
+# [[bin]]
+# name = "sim2"
+# path = "src/bin/sim.rs"

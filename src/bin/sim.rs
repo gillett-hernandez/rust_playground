@@ -1,4 +1,4 @@
-use rand::*;
+use rand::prelude::*;
 
 fn simulation_step<F>(data: &mut Vec<u32>, birth_rate: u32, P: F)
 where
