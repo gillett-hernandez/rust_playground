@@ -59,11 +59,11 @@ impl Swarmling {
         // self.normalize();
     }
     pub fn update(&mut self) {
-        if hypot(self.vx, self.vy) > self.max_speed {
-            self.normalize();
-            self.vx *= self.max_speed;
-            self.vy *= self.max_speed;
-        }
+        // if hypot(self.vx, self.vy) > self.max_speed {
+        // }
+        self.normalize();
+        self.vx *= self.max_speed;
+        self.vy *= self.max_speed;
         self.x += self.vx;
         self.y += self.vy;
     }
@@ -92,11 +92,11 @@ fn main() {
     let mut swarm: Vec<Swarmling> = Vec::new();
 
     for _ in 0..1000 {
-        let mut swarmling = Swarmling::new(0.3, 0.05, 0.01, 0.005);
+        let mut swarmling = Swarmling::new(0.1, 0.05, 0.01, 0.003);
         swarmling.x = random::<f32>();
         swarmling.y = random::<f32>();
-        swarmling.vx = random::<f32>() - 0.5;
-        swarmling.vy = random::<f32>() - 0.5;
+        swarmling.vx = random::<f32>() - 0.3;
+        swarmling.vy = random::<f32>() - 0.3;
         swarmling.normalize();
         swarm.push(swarmling);
     }
@@ -110,46 +110,62 @@ fn main() {
             .for_each(|(idx, swarmling)| {
                 // find neighbors in perception radius
                 *swarmling = swarm[idx];
+                let (mut avg_vx, mut avg_vy) = (0.0, 0.0);
+                let mut ct = 0;
                 for (o_idx, other) in swarm.iter().enumerate() {
                     if idx == o_idx {
                         continue;
                     }
-                    let (dx, dy) = ((swarmling.x - other.x).abs(), (swarmling.y - other.y).abs());
+                    let (dx, dy) = (other.x - swarmling.x, other.y - swarmling.y);
                     let distance = hypot(dx, dy);
                     if distance < swarmling.perception_radius {
+                        ct += 1;
                         if distance < swarmling.social_radius {
                             if distance < swarmling.at_field_radius {
                                 // strongly repel
-                                swarmling.turn_towards(
-                                    other.x,
-                                    other.y,
-                                    -swarmling.at_field_radius / distance * 0.1,
-                                );
+                                avg_vx -= 2.0 * dx;
+                                avg_vy -= 2.0 * dy;
                             } else {
                                 // weakly repel to approach social_distance
-                                swarmling.turn_towards(other.x, other.y, -0.004);
-                                swarmling.align_with(other.vx, other.vy, -0.004);
+                                avg_vx -= 2.0 * dx;
+                                avg_vy -= 2.0 * dy;
+                                // let (dvx, dvy) = (other.vx - swarmling.vx, other.vy - swarmling.vy);
+                                // avg_vx -= dvx;
+                                // avg_vy -= dvy;
                             }
                         } else {
                             // weakly attract to approach social distance
-                            swarmling.turn_towards(other.x, other.y, 0.00004);
-                            swarmling.align_with(other.vx, other.vy, 0.0004);
+                            avg_vx += 0.5 * dx;
+                            avg_vy += 0.5 * dy;
+                            let (dvx, dvy) = (other.vx - swarmling.vx, other.vy - swarmling.vy);
+                            avg_vx += 2.0 * dvx;
+                            avg_vy += 2.0 * dvy;
                         }
                     }
                 }
-                swarmling.vx *= 0.99;
-                swarmling.vy *= 0.99;
+
+                if ct > 0 {
+                    swarmling.vx += avg_vx / (ct as f32) / 100.0;
+                    swarmling.vy += avg_vy / (ct as f32) / 100.0;
+                }
+
+                // swarmling.vx *= 0.99;
+                // swarmling.vy *= 0.99;
 
                 swarmling.update();
                 if swarmling.x > 1.0 {
                     swarmling.x = 1.0 - std::f32::EPSILON;
+                    swarmling.vx *= -1.0;
                 } else if swarmling.x < 0.0 {
                     swarmling.x = 0.0;
+                    swarmling.vx *= -1.0;
                 }
                 if swarmling.y > 1.0 {
                     swarmling.y = 1.0 - std::f32::EPSILON;
+                    swarmling.vy *= -1.0;
                 } else if swarmling.y < 0.0 {
                     swarmling.y = 0.0;
+                    swarmling.vy *= -1.0;
                 }
             });
         for swarmling in swarm.iter() {
