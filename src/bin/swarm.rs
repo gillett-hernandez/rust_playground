@@ -59,11 +59,11 @@ impl Swarmling {
         // self.normalize();
     }
     pub fn update(&mut self) {
-        // if hypot(self.vx, self.vy) > self.max_speed {
-        // }
-        self.normalize();
-        self.vx *= self.max_speed;
-        self.vy *= self.max_speed;
+        if hypot(self.vx, self.vy) > self.max_speed {
+            self.normalize();
+            self.vx *= self.max_speed;
+            self.vy *= self.max_speed;
+        }
         self.x += self.vx;
         self.y += self.vy;
     }
@@ -120,24 +120,24 @@ fn main() {
                     let distance = hypot(dx, dy);
                     if distance < swarmling.perception_radius {
                         ct += 1;
+                        let (dvx, dvy) = (other.vx - swarmling.vx, other.vy - swarmling.vy);
                         if distance < swarmling.social_radius {
                             if distance < swarmling.at_field_radius {
                                 // strongly repel
-                                avg_vx -= 2.0 * dx;
-                                avg_vy -= 2.0 * dy;
+                                avg_vx -= 3.0 * dx;
+                                avg_vy -= 3.0 * dy;
                             } else {
                                 // weakly repel to approach social_distance
-                                avg_vx -= 2.0 * dx;
-                                avg_vy -= 2.0 * dy;
-                                // let (dvx, dvy) = (other.vx - swarmling.vx, other.vy - swarmling.vy);
-                                // avg_vx -= dvx;
-                                // avg_vy -= dvy;
+                                // avg_vx -= 2.0 * dx;
+                                // avg_vy -= 2.0 * dy;
+
+                                // avg_vx += dvx;
+                                // avg_vy += dvy;
                             }
                         }
                         // weakly attract to approach social distance
                         avg_vx += 0.5 * dx;
                         avg_vy += 0.5 * dy;
-                        let (dvx, dvy) = (other.vx - swarmling.vx, other.vy - swarmling.vy);
                         avg_vx += 2.0 * dvx;
                         avg_vy += 2.0 * dvy;
                     }
@@ -148,8 +148,12 @@ fn main() {
                     swarmling.vy += avg_vy / (ct as f32) / 100.0;
                 }
 
-                // swarmling.vx *= 0.99;
-                // swarmling.vy *= 0.99;
+                let current_speed = hypot(swarmling.vx, swarmling.vy);
+                swarmling.vx = (current_speed + 0.1) * swarmling.vx / current_speed;
+                swarmling.vy = (current_speed + 0.1) * swarmling.vy / current_speed;
+
+                swarmling.vx *= 0.99;
+                swarmling.vy *= 0.99;
 
                 swarmling.update();
                 if swarmling.x > 1.0 {
