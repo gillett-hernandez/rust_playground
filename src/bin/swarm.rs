@@ -133,14 +133,13 @@ fn main() {
                                 // avg_vx -= dvx;
                                 // avg_vy -= dvy;
                             }
-                        } else {
-                            // weakly attract to approach social distance
-                            avg_vx += 0.5 * dx;
-                            avg_vy += 0.5 * dy;
-                            let (dvx, dvy) = (other.vx - swarmling.vx, other.vy - swarmling.vy);
-                            avg_vx += 2.0 * dvx;
-                            avg_vy += 2.0 * dvy;
                         }
+                        // weakly attract to approach social distance
+                        avg_vx += 0.5 * dx;
+                        avg_vy += 0.5 * dy;
+                        let (dvx, dvy) = (other.vx - swarmling.vx, other.vy - swarmling.vy);
+                        avg_vx += 2.0 * dvx;
+                        avg_vy += 2.0 * dvy;
                     }
                 }
 
