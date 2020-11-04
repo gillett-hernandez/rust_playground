@@ -7,10 +7,6 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOption
 use rand::prelude::*;
 use rayon::prelude::*;
 
-fn hypot(x: f32, y: f32) -> f32 {
-    (x * x + y * y).sqrt()
-}
-
 #[derive(Copy, Clone, Debug)]
 struct Swarmling {
     pub x: f32,
@@ -42,7 +38,7 @@ impl Swarmling {
         }
     }
     pub fn normalize(&mut self) {
-        let scale = hypot(self.vx, self.vy);
+        let scale = self.vx.hypot(self.vy);
         self.vx = self.vx / scale;
         self.vy = self.vy / scale;
     }
@@ -59,7 +55,7 @@ impl Swarmling {
         // self.normalize();
     }
     pub fn update(&mut self) {
-        if hypot(self.vx, self.vy) > self.max_speed {
+        if self.vx.hypot(self.vy) > self.max_speed {
             self.normalize();
             self.vx *= self.max_speed;
             self.vy *= self.max_speed;
@@ -92,7 +88,7 @@ fn main() {
     let mut swarm: Vec<Swarmling> = Vec::new();
 
     for _ in 0..1000 {
-        let mut swarmling = Swarmling::new(0.1, 0.05, 0.01, 0.003);
+        let mut swarmling = Swarmling::new(0.06, 0.03, 0.01, 0.003);
         swarmling.x = random::<f32>();
         swarmling.y = random::<f32>();
         swarmling.vx = random::<f32>() - 0.3;
@@ -117,15 +113,16 @@ fn main() {
                         continue;
                     }
                     let (dx, dy) = (other.x - swarmling.x, other.y - swarmling.y);
-                    let distance = hypot(dx, dy);
+                    let distance = dx.hypot(dy);
                     if distance < swarmling.perception_radius {
                         ct += 1;
                         let (dvx, dvy) = (other.vx - swarmling.vx, other.vy - swarmling.vy);
                         if distance < swarmling.social_radius {
                             if distance < swarmling.at_field_radius {
                                 // strongly repel
-                                avg_vx -= 3.0 * dx;
-                                avg_vy -= 3.0 * dy;
+                                let strength = 2.0 * (-distance).exp();
+                                avg_vx -= 2.0 * strength * dx / distance;
+                                avg_vy -= 2.0 * strength * dy / distance;
                             } else {
                                 // weakly repel to approach social_distance
                                 // avg_vx -= 2.0 * dx;
@@ -136,8 +133,8 @@ fn main() {
                             }
                         }
                         // weakly attract to approach social distance
-                        avg_vx += 0.5 * dx;
-                        avg_vy += 0.5 * dy;
+                        avg_vx += 0.3 * dx;
+                        avg_vy += 0.3 * dy;
                         avg_vx += 2.0 * dvx;
                         avg_vy += 2.0 * dvy;
                     }
@@ -148,7 +145,7 @@ fn main() {
                     swarmling.vy += avg_vy / (ct as f32) / 100.0;
                 }
 
-                let current_speed = hypot(swarmling.vx, swarmling.vy);
+                let current_speed = swarmling.vx.hypot(swarmling.vy);
                 swarmling.vx = (current_speed + 0.1) * swarmling.vx / current_speed;
                 swarmling.vy = (current_speed + 0.1) * swarmling.vy / current_speed;
 
