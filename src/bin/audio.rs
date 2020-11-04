@@ -7,17 +7,18 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Data, Sample, SampleFormat, StreamInstant};
 use crossbeam::unbounded;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
+use packed_simd::f32x16;
 use rand::prelude::*;
 use rayon::prelude::*;
 
-fn read_input<T: Sample>(data: &[T], info: &cpal::InputCallbackInfo) {
-    let mut time: f32 = 0.1;
-    let mul = 1.0 / 48000.0;
-    for sample in data.iter() {
-        time += mul * 1.0;
-        // *sample = Sample::from(&time.sin());
-    }
-}
+// fn read_input<T: Sample>(data: &[T], info: &cpal::InputCallbackInfo) {
+//     let mut time: f32 = 0.1;
+//     let mul = 1.0 / 48000.0;
+//     for sample in data.iter() {
+//         time += mul * 1.0;
+//         // *sample = Sample::from(&time.sin());
+//     }
+// }
 
 fn main() {
     const WINDOW_WIDTH: usize = 800;
@@ -37,7 +38,7 @@ fn main() {
     let mut buffer = vec![0u32; WINDOW_WIDTH * WINDOW_HEIGHT];
 
     // Limit to max ~144 fps update rate
-    window.limit_update_rate(Some(std::time::Duration::from_micros(6944)));
+    window.limit_update_rate(Some(std::time::Duration::from_micros(16666)));
 
     let host = cpal::default_host();
     let input_device = host
@@ -53,11 +54,12 @@ fn main() {
         .next()
         .expect("no supported config?!")
         .with_max_sample_rate();
-    println!("{:?}", supported_config);
+    let sample_rate = supported_config.sample_rate().0;
+    println!("{:?}", sample_rate);
     let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
     let sample_format = supported_config.sample_format();
     let config = supported_config.into();
-    let (a, b) = unbounded::<f32>();
+    let (a, b) = unbounded::<f32x16>();
     let output_stream = match sample_format {
         SampleFormat::F32 => output_device.build_output_stream(
             &config,
@@ -66,11 +68,14 @@ fn main() {
                 let mut received_samples = 0;
                 'outer: while received_samples < req_samples {
                     for sample in b.try_iter() {
-                        if received_samples >= req_samples {
-                            break 'outer;
+                        let samples: [f32; 16] = sample.into();
+                        for sub_idx in 0..16 {
+                            if received_samples >= req_samples {
+                                break 'outer;
+                            }
+                            data[received_samples] = samples[sub_idx];
+                            received_samples += 1;
                         }
-                        data[received_samples] = sample;
-                        received_samples += 1;
                     }
                 }
             },
@@ -91,15 +96,29 @@ fn main() {
     // input_stream.play().unwrap();
     output_stream.play().unwrap();
 
-    let samples_per_frame = 48000.0 / 144.0;
+    let samples_per_frame = (sample_rate as f32) / 60.0;
+    println!("samples per frame: {}", samples_per_frame);
+
+    let spread = f32x16::new(
+        0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+    );
 
     let mut t: f32 = 0.0;
+    let frequency = std::f32::consts::PI * 200.0;
+    let y_coordinate = WINDOW_HEIGHT / 2;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         buffer.fill(0u32);
 
-        for _ in 0..((2.0 * samples_per_frame) as usize) {
-            t += 10.0 / samples_per_frame;
-            a.try_send(t.sin()).unwrap();
+        for chunk in 0..((samples_per_frame) as usize) {
+            t += frequency * 16.0 / (sample_rate as f32);
+            let signal = (spread / (sample_rate as f32) * frequency + f32x16::splat(t)).sin();
+            a.try_send(signal).unwrap();
+            for i in 0..16 {
+                let s = signal.extract(i);
+                buffer[(y_coordinate as isize + (s * 64.0) as isize) as usize * WINDOW_WIDTH
+                    + chunk * 16
+                    + i] = 255u32;
+            }
         }
         // println!("frame");
 
