@@ -181,7 +181,11 @@ fn dft(signal: &Vec<f32>, sample_rate: usize, num_bins: usize) -> Option<Vec<f32
     let time_bounds = (signal.len() as f32) * 1.0 / (sample_rate as f32);
     let max_detectable_frequency = (sample_rate as f32) / 2.0;
     let min_detectable_frequency = 2.0 / time_bounds;
-    let frequency_bounds = max_detectable_frequency - min_detectable_frequency;
+    if min_detectable_frequency > 80.0 {
+        return None;
+    }
+    let min_detectable_frequency = 80.0;
+    let frequency_bounds = max_detectable_frequency / min_detectable_frequency;
     let octaves = frequency_bounds.log2();
     // let bin_size = octaves / (num_bins as f32);
     let mult =
@@ -192,43 +196,64 @@ fn dft(signal: &Vec<f32>, sample_rate: usize, num_bins: usize) -> Option<Vec<f32
         min_detectable_frequency, max_detectable_frequency, octaves, mult
     );
 
-    let interpolated = LinearCurve {
-        signal: signal.clone(),
-        bounds: Bounds1D::new(0.0, time_bounds),
-        mode: InterpolationMode::Cubic,
-    };
+    // let interpolated = LinearCurve {
+    //     signal: signal.clone(),
+    //     bounds: Bounds1D::new(0.0, time_bounds),
+    //     mode: InterpolationMode::Cubic,
+    // };
     // println!("{:?}", interpolated);
     let mut bins: Vec<(f32, f32)> = Vec::new();
     let mut freq = min_detectable_frequency;
+    let N = signal.len();
+    // for i in 0..num_bins {
+    //     bins.push((0.0, 0.0));
+    //     // time from peak to peak
+    //     let wavelength = 1.0 / freq;
+    //     let fraction = wavelength / interpolated.bounds.span();
+    //     let num_samples = (fraction * interpolated.signal.len() as f32) as usize;
+    //     if num_samples <= 2 {
+    //         break;
+    //     }
+    //     // println!(
+    //     //     "wavelength: {}, fraction: {}, num_samples: {}",
+    //     //     wavelength, fraction, num_samples
+    //     // );
+    //     for sample_idx in 0..num_samples {
+    //         for subsample_idx in 0..(fraction.recip().floor() as usize) {
+    //             let t = sample_idx as f32 * wavelength * fraction / (num_samples as f32)
+    //                 + wavelength * (subsample_idx) as f32;
+    //             let f = interpolated.evaluate(t);
+    //             bins[i].0 += f * (std::f32::consts::TAU * freq * t).cos();
+    //             bins[i].1 += -f * (std::f32::consts::TAU * freq * t).sin();
+    //         }
+    //     }
+    //     freq *= mult;
+    // }
     for i in 0..num_bins {
         bins.push((0.0, 0.0));
-        // time from peak to peak
-        let wavelength = 1.0 / freq;
-        let fraction = wavelength / interpolated.bounds.span();
-        let num_samples = (fraction * interpolated.signal.len() as f32) as usize;
-        if num_samples <= 2 {
-            break;
-        }
-        // println!(
-        //     "wavelength: {}, fraction: {}, num_samples: {}",
-        //     wavelength, fraction, num_samples
-        // );
-        for sample_idx in 0..num_samples {
-            for subsample_idx in 0..(fraction.recip().floor() as usize) {
-                let t = sample_idx as f32 * wavelength * fraction / (num_samples as f32)
-                    + wavelength * (subsample_idx) as f32;
-                let f = interpolated.evaluate(t);
-                bins[i].0 += f * (std::f32::consts::TAU * freq * t).cos();
-                bins[i].1 += -f * (std::f32::consts::TAU * freq * t).sin();
-            }
-        }
-        freq *= mult;
     }
+    bins.par_iter_mut().enumerate().for_each(|(k, bin)| {
+        for n in 0..N {
+            let inner = std::f32::consts::TAU * k as f32 * n as f32 / N as f32;
+            let (sin, cos) = inner.sin_cos();
+            bin.0 += signal[n] * cos;
+            bin.1 += -signal[n] * sin;
+        }
+    });
 
     let mut amplitudes = Vec::new();
-    for b in bins {
-        amplitudes.push(b.0.hypot(b.1) / 256.0);
+    for _ in 0..num_bins {
+        amplitudes.push(0.0);
     }
+
+    for (k, b) in bins.iter().enumerate() {
+        // freq is k cycles per N samples. which means k cycles per T seconds. which means k/T cycles per second.
+        let target_freq = k as f32 / time_bounds;
+        let nearest_bin = (target_freq / min_detectable_frequency);
+        let target_bin = (target_freq / min_detectable_frequency).log(mult).floor();
+        amplitudes[target_bin as usize] += b.0.hypot(b.1) / N as f32;
+    }
+
     Some(amplitudes)
 }
 
@@ -396,10 +421,12 @@ fn main() {
         for (y, bin) in last_bins.iter().rev().enumerate() {
             // iterate from newest to oldest
             for (x, a) in bin.iter().enumerate() {
-                buffer[(y + 300) * WINDOW_WIDTH + x] = (((1.0 - (-*a).exp()) * 255.0) as u32) << 8
+                let sig = 1.0 - (-*a * 20.0).exp();
+                // let sig = *a;
+                buffer[(y + 300) * WINDOW_WIDTH + x] = ((sig.clamp(0.0, 1.0) * 255.0) as u32) << 8;
             }
         }
-        if last_bins.len() + 300 > WINDOW_HEIGHT {
+        if last_bins.len() + 300 >= WINDOW_HEIGHT {
             last_bins.remove(0);
         }
         window
