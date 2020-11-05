@@ -242,16 +242,30 @@ fn dft(signal: &Vec<f32>, sample_rate: usize, num_bins: usize) -> Option<Vec<f32
     });
 
     let mut amplitudes = Vec::new();
-    for _ in 0..num_bins {
-        amplitudes.push(0.0);
+    for b in bins.iter() {
+        amplitudes.push(b.0.hypot(b.1) / N as f32);
     }
 
-    for (k, b) in bins.iter().enumerate() {
+    let interpolated = LinearCurve {
+        signal: amplitudes.clone(),
+        mode: InterpolationMode::Cubic,
+        bounds: Bounds1D::new(0.0, N as f32),
+    };
+
+    let samples = 8;
+    for (target_bin, a) in amplitudes.iter_mut().enumerate() {
         // freq is k cycles per N samples. which means k cycles per T seconds. which means k/T cycles per second.
-        let target_freq = k as f32 / time_bounds;
-        let nearest_bin = (target_freq / min_detectable_frequency);
-        let target_bin = (target_freq / min_detectable_frequency).log(mult).floor();
-        amplitudes[target_bin as usize] += b.0.hypot(b.1) / N as f32;
+        // let target_freq = k as f32 / time_bounds;
+        // let nearest_bin = (target_freq / min_detectable_frequency);
+        // let target_bin = (target_freq / min_detectable_frequency).log(mult).floor();
+
+        *a = 0.0;
+        for sample in 0..samples {
+            let dft_target_freq = time_bounds
+                * mult.powf(target_bin as f32 + sample as f32 / samples as f32)
+                * min_detectable_frequency;
+            *a += interpolated.evaluate(dft_target_freq);
+        }
     }
 
     Some(amplitudes)
@@ -379,7 +393,7 @@ fn main() {
     let y_coordinate = 100 + 64 / 2;
     let y_span = 64;
     let freq_range = 22000;
-    let num_bins = 512;
+    let num_bins = 1024;
     let mut last_bins = Vec::new();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
@@ -421,7 +435,7 @@ fn main() {
         for (y, bin) in last_bins.iter().rev().enumerate() {
             // iterate from newest to oldest
             for (x, a) in bin.iter().enumerate() {
-                let sig = 1.0 - (-*a * 20.0).exp();
+                let sig = 1.0 - (-*a * 2.0).exp();
                 // let sig = *a;
                 buffer[(y + 300) * WINDOW_WIDTH + x] = ((sig.clamp(0.0, 1.0) * 255.0) as u32) << 8;
             }
