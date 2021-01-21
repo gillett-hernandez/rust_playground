@@ -136,7 +136,7 @@ fn main() {
             let particle = &particles[i];
             let other = &particles[j];
 
-            do_collision_check(particle, other)
+            do_collision_check(t, i, j, particle, other)
         })
         .collect();
     for idx in 0..1000usize {
@@ -260,7 +260,7 @@ fn main() {
                     // check collision of check_i and i
                     let particle = &new_particle;
                     let other = &particles[check_i];
-                    do_collision_check(particle, other)
+                    do_collision_check(t, *idx, check_i, particle, other)
                 })
                 .collect();
             events.extend(new_events.drain(..));
