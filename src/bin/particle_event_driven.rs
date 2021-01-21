@@ -98,12 +98,26 @@ fn main() {
     // let dt = 6944.0 / 1000000.0;
 
     let mut particles: Vec<Particle> = Vec::new();
-    let num_particles = 200;
+    let num_particles = 700;
 
-    for i in 0..num_particles {
+    let phi = random::<f32>() * std::f32::consts::TAU;
+    let mag = random::<f32>() * 0.3 + 0.2;
+    let particle = Particle::new(
+        3.5,
+        0.05,
+        0.5,
+        0.5,
+        mag * phi.cos(),
+        mag * phi.sin(),
+        0.0,
+        0.0,
+    );
+
+    particles.push(particle);
+    for i in 0..num_particles - 1 {
         let phi = random::<f32>() * std::f32::consts::TAU;
-        let mag = random::<f32>() * 1.0 + 0.2;
-        let r = random::<f32>() * 0.000 + 0.004;
+        let mag = random::<f32>() * 0.3 + 0.2;
+        let r = random::<f32>() * 0.003 + 0.003;
         let particle = loop {
             let particle = Particle::new(
                 0.5,
@@ -205,23 +219,23 @@ fn main() {
             if event_time < 0.0 {
                 break (event_time, collision_time, i, j);
             } else {
-                println!("{:?}, particle = {:?}", events.last(), particles[i]);
+                // println!("{:?}, particle = {:?}", events.last(), particles[i]);
             }
 
             if particles[i].time > event_time {
                 // particle has been updated since the event was added.
-                print!(
-                    "particle_time = {:?}, skipping event, \nnew event =",
-                    particles[i].time
-                );
+                // print!(
+                //     "particle_time = {:?}, skipping event, \nnew event =",
+                //     particles[i].time
+                // );
                 continue;
             }
             if j.is_some() && particles[j.unwrap()].time > event_time {
-                print!(
-                    "particle_j = {:?}, particle_time = {:?}, skipping event, \nnew event =",
-                    particles[j.unwrap()],
-                    particles[j.unwrap()].time
-                );
+                // print!(
+                //     "particle_j = {:?}, particle_time = {:?}, skipping event, \nnew event =",
+                //     particles[j.unwrap()],
+                //     particles[j.unwrap()].time
+                // );
                 continue;
             }
             break (event_time, collision_time, i, j);
@@ -295,7 +309,7 @@ fn main() {
                     let j = 2.0 * other.mass * particle.mass * dvdr
                         / (sigma * (other.mass + particle.mass));
                     let jxy = (j * dr.0 / sigma, j * dr.1 / sigma);
-                    println!("performing actual collision. impulse is {} = 2.0 * {} * {} * {} / ({} * ({} + {}))", j, other.mass, particle.mass, dvdr, sigma, other.mass, particle.mass);
+                    // println!("performing actual collision. impulse is {} = 2.0 * {} * {} * {} / ({} * ({} + {}))", j, other.mass, particle.mass, dvdr, sigma, other.mass, particle.mass);
                     new_particle.vx += jxy.0 / particle.mass;
                     new_particle.vy += jxy.1 / particle.mass;
                     other.vx -= jxy.0 / other.mass;
@@ -303,13 +317,13 @@ fn main() {
                     let new_particle_v = new_particle.vx.hypot(new_particle.vy);
                     let other_v = other.vx.hypot(other.vy);
                     if new_particle_v > 3.0 {
-                        println!("warning, very fast moving particle");
+                        // println!("warning, very fast moving particle");
                         // panic!();
                         // new_particle.vx /= new_particle_v;
                         // new_particle.vy /= new_particle_v;
                     }
                     if other_v > 3.0 {
-                        println!("warning, very fast moving particle");
+                        // println!("warning, very fast moving particle");
                         // panic!();
                         // other.vx /= other_v;
                         // other.vy /= other_v;
@@ -323,20 +337,20 @@ fn main() {
                         || particle.x + particle.radius > 1.0 - 0.001
                     {
                         // near right and left walls
-                        println!(
-                            "bouncing horizontal, {}, {}, {}",
-                            particle.x, particle.y, particle.radius
-                        );
+                        // println!(
+                        //     "bouncing horizontal, {}, {}, {}",
+                        //     particle.x, particle.y, particle.radius
+                        // );
                         new_particle.vx *= -1.0;
                     }
                     if particle.y - particle.radius < 0.001
                         || particle.y + particle.radius > 1.0 - 0.001
                     {
                         // near top and bottom walls.
-                        println!(
-                            "bouncing vertical, {}, {}, {}",
-                            particle.x, particle.y, particle.radius
-                        );
+                        // println!(
+                        //     "bouncing vertical, {}, {}, {}",
+                        //     particle.x, particle.y, particle.radius
+                        // );
                         new_particle.vy *= -1.0;
                     }
                 }
