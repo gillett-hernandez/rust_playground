@@ -203,7 +203,7 @@ fn dft(signal: &Vec<f32>, sample_rate: usize, num_bins: usize) -> Option<Vec<f32
     // };
     // println!("{:?}", interpolated);
     let mut bins: Vec<(f32, f32)> = Vec::new();
-    let mut freq = min_detectable_frequency;
+    let freq = min_detectable_frequency;
     let N = signal.len();
     // for i in 0..num_bins {
     //     bins.push((0.0, 0.0));
