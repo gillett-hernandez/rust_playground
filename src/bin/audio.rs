@@ -1,4 +1,4 @@
-#![feature(slice_fill, clamp)]
+#![feature(slice_fill)]
 extern crate minifb;
 
 use lib::*;

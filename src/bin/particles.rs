@@ -51,39 +51,6 @@ impl Particle {
         self.y += self.vy * dt;
     }
 }
-fn attempt_write(buffer: &mut Vec<u32>, px: usize, py: usize, c: u32) {
-    if py * WINDOW_WIDTH + px >= buffer.len() {
-        return;
-    }
-    buffer[py * WINDOW_WIDTH + px] = c;
-}
-
-const PIXEL_DIAMETER: f32 = 1.0 / WINDOW_WIDTH as f32;
-
-fn blit_circle(buffer: &mut Vec<u32>, radius: f32, x: usize, y: usize) {
-    let approx_pixel_circumference = radius as f32 * std::f32::consts::TAU;
-
-    for phi in 0..(approx_pixel_circumference as usize) {
-        let (new_px, new_py) = (
-            (x as f32 * PIXEL_DIAMETER
-                + radius as f32
-                    * PIXEL_DIAMETER
-                    * (phi as f32 * std::f32::consts::TAU / approx_pixel_circumference).cos())
-                / PIXEL_DIAMETER,
-            (y as f32 * PIXEL_DIAMETER
-                + radius as f32
-                    * PIXEL_DIAMETER
-                    * (phi as f32 * std::f32::consts::TAU / approx_pixel_circumference).sin())
-                / PIXEL_DIAMETER,
-        );
-        attempt_write(
-            buffer,
-            new_px as usize,
-            new_py as usize,
-            255u32 + 255u32 << 8,
-        );
-    }
-}
 
 pub fn particle_particle_check(
     time: f32,
@@ -164,7 +131,7 @@ fn main() {
         panic!("{}", e);
     });
 
-    let mut buffer = vec![0u32; WINDOW_WIDTH * WINDOW_HEIGHT];
+    let mut film = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, 0u32);
 
     // Limit to max ~144 fps update rate
     window.limit_update_rate(Some(std::time::Duration::from_micros(6944)));
@@ -174,7 +141,7 @@ fn main() {
     let num_particles = 700;
 
     let phi = random::<f32>() * std::f32::consts::TAU;
-    let mag = random::<f32>() * 0.3 + 0.2;
+    let mag = random::<f32>() * 0.3 + 0.9;
     let particle = Particle::new(
         3.5,
         0.05,
@@ -192,13 +159,17 @@ fn main() {
         let mag = random::<f32>() * 0.3 + 0.2;
         let r = random::<f32>() * 0.003 + 0.003;
         let particle = loop {
+            let x = random::<f32>() * (1.0 - 2.0 * r) + r;
+            let y = random::<f32>() * (1.0 - 2.0 * r) + r;
             let particle = Particle::new(
                 0.5,
                 r,
-                random::<f32>() * (1.0 - 2.0 * r) + r,
-                random::<f32>() * (1.0 - 2.0 * r) + r,
-                mag * phi.cos(),
-                mag * phi.sin(),
+                x,
+                y,
+                // mag * phi.cos(),
+                -(0.5 - y),
+                0.5 - x,
+                // mag * phi.sin(),
                 0.0,
                 0.0,
             );
@@ -257,7 +228,7 @@ fn main() {
     events.push((-1.0, t + frame_dt, 0, None));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        buffer.fill(0u32);
+        film.buffer.fill(0u32);
 
         // sort reversed
         events.sort_by_key(|e| OrderedFloat::<f32>(-e.1));
@@ -300,7 +271,8 @@ fn main() {
                     (particle.x * WINDOW_WIDTH as f32) as usize,
                     (particle.y * WINDOW_HEIGHT as f32) as usize,
                 );
-                attempt_write(&mut buffer, px, py, 255u32 + 255u32 << 8);
+                attempt_write(&mut film, px, py, 255u32 + 255u32 << 8);
+                let PIXEL_DIAMETER = 1.0 / film.width as f32;
 
                 let mut r = 1;
                 let pixel_radius = loop {
@@ -310,13 +282,19 @@ fn main() {
                     r += 1;
                 };
 
-                blit_circle(&mut buffer, pixel_radius as f32, px, py);
+                let e = 0.5 * particle.mass * particle.vx.hypot(particle.vy).powi(2);
+                let c = triple_to_u32(hsv_to_rgb(
+                    ((360.0 * (1.0 - (-e).exp())) as usize + 100) % 360,
+                    1.0,
+                    1.0,
+                ));
+                blit_circle(&mut film, pixel_radius as f32, px, py, c);
 
-                attempt_write(&mut buffer, px, py, 255u32 + 255u32 << 8);
+                attempt_write(&mut film, px, py, c);
             }
             // std::mem::swap(&mut particles, &mut swap);
             window
-                .update_with_buffer(&buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
+                .update_with_buffer(&film.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
                 .unwrap();
         } else {
             let particle = particles[i];
@@ -337,18 +315,21 @@ fn main() {
                     // println!("performing actual collision. impulse is {} = 2.0 * {} * {} * {} / ({} * ({} + {}))", j, other.mass, particle.mass, dvdr, sigma, other.mass, particle.mass);
                     new_particle.vx += jxy.0 / particle.mass;
                     new_particle.vy += jxy.1 / particle.mass;
+                    let prev_other_v = other.vx.hypot(other.vy);
                     other.vx -= jxy.0 / other.mass;
                     other.vy -= jxy.1 / other.mass;
                     let new_particle_v = new_particle.vx.hypot(new_particle.vy);
+                    let new_particle_e = 0.5 * particle.mass * new_particle_v.powi(2);
                     let other_v = other.vx.hypot(other.vy);
+                    let other_e = 0.5 * other.mass * other_v.powi(2);
                     if new_particle_v > 3.0 {
-                        // println!("warning, very fast moving particle");
+                        println!("warning, very fast moving particle");
                         // panic!();
                         // new_particle.vx /= new_particle_v;
                         // new_particle.vy /= new_particle_v;
                     }
                     if other_v > 3.0 {
-                        // println!("warning, very fast moving particle");
+                        println!("warning, very fast moving particle");
                         // panic!();
                         // other.vx /= other_v;
                         // other.vy /= other_v;
@@ -358,24 +339,27 @@ fn main() {
                 }
                 None => {
                     new_particle.time = t;
-                    if particle.x - particle.radius < 0.001
-                        || particle.x + particle.radius > 1.0 - 0.001
-                    {
-                        // near right and left walls
+                    if particle.x - particle.radius < 0.001 {
+                        // near left wall (x = 0)
                         // println!(
                         //     "bouncing horizontal, {}, {}, {}",
                         //     particle.x, particle.y, particle.radius
                         // );
-                        new_particle.vx *= -1.0;
+                        new_particle.vx *= -1.3;
+                    } else if particle.x + particle.radius > 1.0 - 0.001 {
+                        // near right wall (x = 1)
+                        new_particle.vx *= -0.7
                     }
-                    if particle.y - particle.radius < 0.001
-                        || particle.y + particle.radius > 1.0 - 0.001
-                    {
-                        // near top and bottom walls.
+                    if particle.y - particle.radius < 0.001 {
+                        // near top wall (y = 0)
+
                         // println!(
                         //     "bouncing vertical, {}, {}, {}",
                         //     particle.x, particle.y, particle.radius
                         // );
+                        new_particle.vy *= -1.0;
+                    } else if particle.y + particle.radius > 1.0 - 0.001 {
+                        // near bottom wall (y = 1)
                         new_particle.vy *= -1.0;
                     }
                 }

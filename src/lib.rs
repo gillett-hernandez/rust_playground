@@ -80,3 +80,59 @@ pub fn map(film: &Film<f32x4>, max_luminance: f32, pixel: (usize, usize)) -> (f3
     );
     (srgb, rgb_linear)
 }
+
+pub fn attempt_write(film: &mut Film<u32>, px: usize, py: usize, c: u32) {
+    if py * film.width + px >= film.buffer.len() {
+        return;
+    }
+    film.buffer[py * film.width + px] = c;
+}
+
+pub fn hsv_to_rgb(h: usize, s: f32, v: f32) -> (u8, u8, u8) {
+    let c = v * s;
+    let x = c * (1.0 - ((h as f32 / 60.0) % 2.0 - 1.0)).abs();
+    let m = v - c;
+    let convert = |(r, g, b), m| {
+        (
+            ((r + m) * 255.0) as u8,
+            ((g + m) * 255.0) as u8,
+            ((b + m) * 255.0) as u8,
+        )
+    };
+    match h {
+        0..=60 => convert((c, x, 0.0), m),
+        61..=120 => convert((x, c, 0.0), m),
+        121..=180 => convert((0.0, c, x), m),
+        181..=240 => convert((0.0, x, c), m),
+        241..=300 => convert((x, 0.0, c), m),
+        301..=360 => convert((c, 0.0, x), m),
+        _ => (0, 0, 0),
+    }
+}
+
+pub fn triple_to_u32(triple: (u8, u8, u8)) -> u32 {
+    let c = ((triple.0 as u32) << 16) + ((triple.1 as u32) << 8) + (triple.2 as u32);
+    c
+}
+
+pub fn blit_circle(film: &mut Film<u32>, radius: f32, x: usize, y: usize, c: u32) {
+    let approx_pixel_circumference = radius as f32 * std::f32::consts::TAU;
+
+    let PIXEL_X_SIZE = 1.0 / film.width as f32;
+    let PIXEL_Y_SIZE = 1.0 / film.height as f32;
+    for phi in 0..(approx_pixel_circumference as usize) {
+        let (new_px, new_py) = (
+            (x as f32 * PIXEL_X_SIZE
+                + radius as f32
+                    * PIXEL_X_SIZE
+                    * (phi as f32 * std::f32::consts::TAU / approx_pixel_circumference).cos())
+                / PIXEL_X_SIZE,
+            (y as f32 * PIXEL_Y_SIZE
+                + radius as f32
+                    * PIXEL_Y_SIZE
+                    * (phi as f32 * std::f32::consts::TAU / approx_pixel_circumference).sin())
+                / PIXEL_Y_SIZE,
+        );
+        attempt_write(film, new_px as usize, new_py as usize, c);
+    }
+}
