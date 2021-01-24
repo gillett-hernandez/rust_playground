@@ -8,6 +8,8 @@ use ordered_float::OrderedFloat;
 use rand::prelude::*;
 use rayon::prelude::*;
 
+const WINDOW_WIDTH: usize = 800;
+const WINDOW_HEIGHT: usize = 800;
 #[derive(Copy, Clone, Debug)]
 pub struct Particle {
     pub time: f32,
@@ -17,8 +19,8 @@ pub struct Particle {
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
-    // pub ax: f32,
-    // pub ay: f32,
+    pub ax: f32,
+    pub ay: f32,
     // pub spin: f32,
 }
 
@@ -32,8 +34,8 @@ impl Particle {
             y,
             vx,
             vy,
-            // ax,
-            // ay,
+            ax,
+            ay,
             // spin: 0.0,
         }
     }
@@ -43,13 +45,47 @@ impl Particle {
         self.vy = self.vy / scale;
     }
     pub fn update(&mut self, dt: f32) {
-        // self.vx += self.ax * dt;
-        // self.vy += self.ay * dt;
+        self.vx += self.ax * dt;
+        self.vy += self.ay * dt;
         self.x += self.vx * dt;
         self.y += self.vy * dt;
     }
 }
-pub fn do_collision_check(
+fn attempt_write(buffer: &mut Vec<u32>, px: usize, py: usize, c: u32) {
+    if py * WINDOW_WIDTH + px >= buffer.len() {
+        return;
+    }
+    buffer[py * WINDOW_WIDTH + px] = c;
+}
+
+const PIXEL_DIAMETER: f32 = 1.0 / WINDOW_WIDTH as f32;
+
+fn blit_circle(buffer: &mut Vec<u32>, radius: f32, x: usize, y: usize) {
+    let approx_pixel_circumference = radius as f32 * std::f32::consts::TAU;
+
+    for phi in 0..(approx_pixel_circumference as usize) {
+        let (new_px, new_py) = (
+            (x as f32 * PIXEL_DIAMETER
+                + radius as f32
+                    * PIXEL_DIAMETER
+                    * (phi as f32 * std::f32::consts::TAU / approx_pixel_circumference).cos())
+                / PIXEL_DIAMETER,
+            (y as f32 * PIXEL_DIAMETER
+                + radius as f32
+                    * PIXEL_DIAMETER
+                    * (phi as f32 * std::f32::consts::TAU / approx_pixel_circumference).sin())
+                / PIXEL_DIAMETER,
+        );
+        attempt_write(
+            buffer,
+            new_px as usize,
+            new_py as usize,
+            255u32 + 255u32 << 8,
+        );
+    }
+}
+
+pub fn particle_particle_check(
     time: f32,
     i: usize,
     j: usize,
@@ -75,9 +111,46 @@ pub fn do_collision_check(
         }
     }
 }
+
+pub fn particle_wall_check(
+    time: f32,
+    i: usize,
+    particle: &Particle,
+) -> Option<(f32, f32, usize, Option<usize>)> {
+    let dt = if particle.vy < 0.0 {
+        Some((particle.radius - particle.y) / particle.vy)
+    } else if particle.vy > 0.0 {
+        Some((1.0 - particle.radius - particle.y) / particle.vy)
+    } else {
+        None
+    };
+
+    let mut min = std::f32::INFINITY;
+    if let Some(dt) = dt {
+        if dt > 0.0 {
+            min = min.min(dt);
+        }
+    }
+    let dt = if particle.vx < 0.0 {
+        Some((particle.radius - particle.x) / particle.vx)
+    } else if particle.vx > 0.0 {
+        Some((1.0 - particle.radius - particle.x) / particle.vx)
+    } else {
+        None
+    };
+    if let Some(dt) = dt {
+        if dt > 0.0 {
+            min = min.min(dt);
+        }
+    }
+    if min.is_finite() {
+        return Some((time, time + min, i, None));
+    } else {
+        None
+    }
+}
+
 fn main() {
-    const WINDOW_WIDTH: usize = 800;
-    const WINDOW_HEIGHT: usize = 800;
     let mut window = Window::new(
         "Swarm",
         WINDOW_WIDTH,
@@ -169,40 +242,15 @@ fn main() {
             let particle = &particles[i];
             let other = &particles[j];
 
-            do_collision_check(t, i, j, particle, other)
+            particle_particle_check(t, i, j, particle, other)
         })
         .collect();
     for idx in 0..num_particles {
         // horizontal wall (vy) first
         let particle = particles[idx];
-        let dt = if particle.vy < 0.0 {
-            Some((particle.radius - particle.y) / particle.vy)
-        } else if particle.vy > 0.0 {
-            Some((1.0 - particle.radius - particle.y) / particle.vy)
-        } else {
-            None
-        };
-        let mut min = std::f32::INFINITY;
-        if let Some(dt) = dt {
-            if dt > 0.0 {
-                min = min.min(dt);
-            }
-        }
-        let particle = particles[idx];
-        let dt = if particle.vx < 0.0 {
-            Some((particle.radius - particle.x) / particle.vx)
-        } else if particle.vx > 0.0 {
-            Some((1.0 - particle.radius - particle.x) / particle.vx)
-        } else {
-            None
-        };
-        if let Some(dt) = dt {
-            if dt > 0.0 {
-                min = min.min(dt);
-            }
-        }
-        if min.is_finite() {
-            events.push((t, t + min, idx, None));
+        let event = particle_wall_check(t, idx, &particle);
+        if let Some(e) = event {
+            events.push(e);
         }
     }
     events.extend(new_events.drain(..));
@@ -252,42 +300,19 @@ fn main() {
                     (particle.x * WINDOW_WIDTH as f32) as usize,
                     (particle.y * WINDOW_HEIGHT as f32) as usize,
                 );
-                let mut attempt_write = |px: usize, py: usize, c: u32| {
-                    if py * WINDOW_WIDTH + px >= buffer.len() {
-                        return;
-                    }
-                    buffer[py * WINDOW_WIDTH + px] = c;
-                };
-                attempt_write(px, py, 255u32 + 255u32 << 8);
-                let pixel_diameter = 1.0 / WINDOW_HEIGHT as f32;
+                attempt_write(&mut buffer, px, py, 255u32 + 255u32 << 8);
+
                 let mut r = 1;
                 let pixel_radius = loop {
-                    if r as f32 * pixel_diameter > particle.radius {
+                    if r as f32 * PIXEL_DIAMETER > particle.radius {
                         break r;
                     }
                     r += 1;
                 };
-                let approx_pixel_circumference = pixel_radius as f32 * std::f32::consts::TAU;
-                for phi in 0..(approx_pixel_circumference as usize) {
-                    let (new_px, new_py) = (
-                        (px as f32 * pixel_diameter
-                            + r as f32
-                                * pixel_diameter
-                                * (phi as f32 * std::f32::consts::TAU
-                                    / approx_pixel_circumference)
-                                    .cos())
-                            / pixel_diameter,
-                        (py as f32 * pixel_diameter
-                            + r as f32
-                                * pixel_diameter
-                                * (phi as f32 * std::f32::consts::TAU
-                                    / approx_pixel_circumference)
-                                    .sin())
-                            / pixel_diameter,
-                    );
-                    attempt_write(new_px as usize, new_py as usize, 255u32 + 255u32 << 8);
-                }
-                attempt_write(px, py, 255u32 + 255u32 << 8);
+
+                blit_circle(&mut buffer, pixel_radius as f32, px, py);
+
+                attempt_write(&mut buffer, px, py, 255u32 + 255u32 << 8);
             }
             // std::mem::swap(&mut particles, &mut swap);
             window
@@ -377,7 +402,7 @@ fn main() {
                         // check collision of check_i and i
                         let particle = &particles[*idx];
                         let other = &particles[check_i];
-                        do_collision_check(t, *idx, check_i, particle, other)
+                        particle_particle_check(t, *idx, check_i, particle, other)
                     })
                     .collect();
                 events.extend(new_events.drain(..));
@@ -387,35 +412,9 @@ fn main() {
             for idx in indices {
                 // horizontal wall (vy) first
                 let particle = particles[idx];
-                let dt = if particle.vy < 0.0 {
-                    Some((particle.radius - particle.y) / particle.vy)
-                } else if particle.vy > 0.0 {
-                    Some((1.0 - particle.radius - particle.y) / particle.vy)
-                } else {
-                    None
-                };
-
-                let mut min = std::f32::INFINITY;
-                if let Some(dt) = dt {
-                    if dt > 0.0 {
-                        min = min.min(dt);
-                    }
-                }
-                let particle = particles[idx];
-                let dt = if particle.vx < 0.0 {
-                    Some((particle.radius - particle.x) / particle.vx)
-                } else if particle.vx > 0.0 {
-                    Some((1.0 - particle.radius - particle.x) / particle.vx)
-                } else {
-                    None
-                };
-                if let Some(dt) = dt {
-                    if dt > 0.0 {
-                        min = min.min(dt);
-                    }
-                }
-                if min.is_finite() {
-                    events.push((t, t + min, idx, None));
+                let event = particle_wall_check(t, idx, &particle);
+                if let Some(e) = event {
+                    events.push(e);
                 }
             }
         }

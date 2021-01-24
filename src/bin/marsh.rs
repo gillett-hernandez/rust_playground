@@ -62,7 +62,7 @@ fn main() {
         time = cross_marsh(angle);
         last_time = tmp;
         if time - last_time > 0.0 {
-            // lost time;
+            // lost time
             direction *= -1.0;
         }
         heat *= 0.999;
