@@ -6,16 +6,16 @@ edition = "2018"
 
 
 [dependencies]
-itertools = "0.9.0"
+itertools = "0.10.0"
 rayon = "1.4.1"
-# toml = "0.5"
+toml = "0.5"
 num_cpus = "1.13.0"
-# serde = { version = "1.0.114", features = ["derive"] }
-rand = "0.7"
-image = "0.23.10"
+serde = { version = "1.0.120", features = ["derive"] }
+rand = "0.8.2"
+image = "0.23.12"
 packed_simd = { version = "0.3.4", package = "packed_simd_2" }
-nalgebra = "0.22"
-crossbeam = "0.7.3"
+nalgebra = "0.24"
+crossbeam = "0.8.0"
 parking_lot = "0.11.0"
 ordered-float = "1.0.3"
 exr = "0.9.0"
@@ -24,7 +24,7 @@ cpal = "0.13.0"
 minifb = "0.19.1"
 
 [build-dependencies]
-serde = { version = "1.0.114", features = ["derive"] }
+serde = { version = "1.0.120", features = ["derive"] }
 serde_json = "1.0.55"
 
 [profile.dev]

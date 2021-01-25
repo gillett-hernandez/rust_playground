@@ -24,7 +24,7 @@ use rand::prelude::*;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, RngCore};
 
-use crossbeam::unbounded;
+use crossbeam::channel::unbounded;
 
 fn main() {
     let mut light_films: Arc<Mutex<Vec<Arc<Mutex<Film<f32x4>>>>>> =
