@@ -216,6 +216,7 @@ impl LensAssembly {
         let total_thickness = self.total_thickness_at(zoom);
         let mut position = -total_thickness;
         let t = (position - ray.origin.z()) / (ray.direction.z());
+        let mut jacobian = f32x4::splat(1.0);
         ray.origin = ray.point_at_parameter(t);
         for (k, lens) in self.lenses.iter().rev().enumerate() {
             let r = -lens.radius;

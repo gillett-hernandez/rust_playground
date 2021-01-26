@@ -295,6 +295,12 @@ impl Add for Vec3 {
     }
 }
 
+impl AddAssign for Vec3 {
+    fn add_assign(&mut self, other: Vec3) {
+        self.0 += other.0;
+    }
+}
+
 impl Neg for Vec3 {
     type Output = Vec3;
     fn neg(self) -> Vec3 {
