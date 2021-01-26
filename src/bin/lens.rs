@@ -90,14 +90,42 @@ fn main() {
     // -62.03   4.20  N-SF10 1.5 50 24.0
     // -1240.67 5.00  air           24.0
     // 100000  105.00  iris          20.0"; // lensbaby
-    let spec = " 70.97  15.0 abbe 1.523 58.6  23
-    -56.79   4.5 abbe 1.617 38.5  23
-    100000.0 24.0 air             23
-    100000.0 25.3 iris            18
-    119.91   3.8 abbe 1.649 33.8  15
-    40.87    0.9 air              15
-    46.87    7.4 abbe 1.697 56.1  15
-    -282.05 56.5 air              15"; // petzval kodak
+    // let spec = " 70.97  15.0 abbe 1.523 58.6  23
+    // -56.79   4.5 abbe 1.617 38.5  23
+    // 100000.0 24.0 air             23
+    // 100000.0 25.3 iris            18
+    // 119.91   3.8 abbe 1.649 33.8  15
+    // 40.87    0.9 air              15
+    // 46.87    7.4 abbe 1.697 56.1  15
+    // -282.05 56.5 air              15"; // petzval kodak
+    // let spec = "33.072		2.366				C3			1.518	59.0	8.9
+    // -53.387		0.077				air                 8.9
+    // 27.825		2.657				C3			1.518	59.0	8.4
+    // -35.934		1.025				LAF7		1.749	35.0	8.3
+    // 40.900		22.084				air							7.8
+    // 10000		1.794				FD110		1.785	25.7	4.7
+    // -16.775		0.641				TAFD5		1.835	43.0	4.6
+    // 27.153		8.607				air							4.5
+    // 10000       1.0                   iris                      4.8
+    // -120.75		1.035				CF6			1.517	52.2	4.8
+    // -12.105		4.705				air							4.8
+    // -9.386		0.641				TAF1		1.773	49.6	4.0
+    // -24.331		18.960				air							4.1"; // kreitzer telephoto
+    let spec = "96.15 7.00 abbe 1.64 58.1             50.0
+    53.85 17.38 air                       50.0
+    117.48 5.59 abbe 1.58904 53.2         45.0
+    69.93 52.45 air                       45.0
+    106.64 15.73 abbe 1.76684 46.2        25.0
+    -188.11 4.90 air                      25.0
+    -192.31 15.38 abbe 1.76684 27.5       25.0
+    -140.91 9.58 air                      25.0
+    100000 10.0 iris                      25.0
+    -65.04 16.22 abbe 1.7552 27.5         25.0
+    188.11 2.52 air                       25.0
+    -323.43 7.00 abbe 1.713 53.9          25.0
+    -65.39 0.18 air                       25.0
+    -8741.25 6.64 abbe 1.6583 57.3        30.0
+    -117.55 131.19 air                    30.0"; // wideangle 2
     let (lenses, last_ior, last_vno) = parse_lenses_from(spec);
     let lens_assembly = LensAssembly::new(&lenses);
 
@@ -110,6 +138,7 @@ fn main() {
 
     let mut aperture_radius = lens_assembly.aperture_radius();
     let mut heat_bias = 0.1;
+    let mut heat_cap = 10.0;
     let mut lens_zoom = 0.0;
     let mut film_position = -lens_assembly.total_thickness_at(lens_zoom);
     let mut wall_position = 240.0;
@@ -117,6 +146,9 @@ fn main() {
     let mut samples_per_iteration = 1usize;
     let mut total_samples = 0;
     let mut focal_distance_suggestion = None;
+    let mut focal_distance_vec: Vec<f32> = Vec::new();
+    let mut variance: f32 = 0.0;
+    let mut stddev: f32 = 0.0;
     let clear = |film: &mut Film<XYZColor>| {
         film.buffer
             .par_iter_mut()
@@ -125,123 +157,228 @@ fn main() {
     let clear_direction_filter =
         |film: &mut Film<Vec3>| film.buffer.par_iter_mut().for_each(|e| *e = Vec3::Z);
     let mut direction_filter_film = Film::new(film.width, film.height, Vec3::Z);
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        let srgb_tonemapper = sRGB::new(&film, 1.0);
-        if window.is_key_pressed(Key::LeftBracket, KeyRepeat::Yes) {
-            // clear(&mut film);
-            // clear_direction_filter(&mut direction_filter_film);
-            // total_samples = 0;
-            println!("{:?}", aperture_radius);
-            aperture_radius /= 1.1;
-        }
-        if window.is_key_pressed(Key::RightBracket, KeyRepeat::Yes) {
-            // clear(&mut film);
-            // clear_direction_filter(&mut direction_filter_film);
-            // total_samples = 0;
-            println!("{:?}", aperture_radius);
-            aperture_radius *= 1.1;
-        }
-        if window.is_key_pressed(Key::N, KeyRepeat::Yes) {
-            // clear(&mut film);
-            // clear_direction_filter(&mut direction_filter_film);
-            // total_samples = 0;
-            println!("{:?}", heat_bias);
-            heat_bias /= 1.1;
-        }
-        if window.is_key_pressed(Key::M, KeyRepeat::Yes) {
-            // clear(&mut film);
-            // clear_direction_filter(&mut direction_filter_film);
-            // total_samples = 0;
-            println!("{:?}", heat_bias);
-            heat_bias *= 1.1;
-        }
-        if window.is_key_pressed(Key::O, KeyRepeat::Yes) {
-            clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
-            total_samples = 0;
-            println!(
-                "{:?}, {:?}",
-                film_position,
-                lens_assembly.total_thickness_at(lens_zoom)
-            );
-            println!("{:?}", focal_distance_suggestion);
-            film_position -= 1.0;
-        }
-        if window.is_key_pressed(Key::P, KeyRepeat::Yes) {
-            clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
-            total_samples = 0;
-            println!(
-                "{:?}, {:?}",
-                film_position,
-                lens_assembly.total_thickness_at(lens_zoom)
-            );
-            println!("{:?}", focal_distance_suggestion);
-            film_position += 1.0;
-        }
-        if window.is_key_pressed(Key::Q, KeyRepeat::Yes) {
-            clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
-            total_samples = 0;
-            println!("{:?}", wall_position);
-            println!("{:?}", focal_distance_suggestion);
-            wall_position -= 10.0;
-        }
-        if window.is_key_pressed(Key::W, KeyRepeat::Yes) {
-            clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
-            total_samples = 0;
-            println!("{:?}", wall_position);
-            println!("{:?}", focal_distance_suggestion);
-            wall_position += 10.0;
-        }
-        if window.is_key_pressed(Key::Z, KeyRepeat::Yes) {
-            clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
-            total_samples = 0;
-            println!("{:?}", sensor_size);
-            sensor_size /= 1.1;
-        }
-        if window.is_key_pressed(Key::X, KeyRepeat::Yes) {
-            clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
-            total_samples = 0;
-            println!("{:?}", sensor_size);
-            sensor_size *= 1.1;
-        }
-        if window.is_key_pressed(Key::K, KeyRepeat::Yes) {
-            clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
-            total_samples = 0;
-            println!("{:?}", lens_zoom);
-            lens_zoom -= 0.01;
-        }
-        if window.is_key_pressed(Key::L, KeyRepeat::Yes) {
-            clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
-            total_samples = 0;
-            println!("{:?}", lens_zoom);
-            lens_zoom += 0.01;
-        }
 
-        if window.is_key_pressed(Key::Minus, KeyRepeat::Yes) {
-            println!("{:?}", samples_per_iteration);
-            if samples_per_iteration > 1 {
-                samples_per_iteration -= 1;
+    let mut last_pressed_hotkey = Key::A;
+    let mut wavelength_sweep = 0.0;
+    let mut wavelength_sweep_speed = 0.001;
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        let keys = window.get_keys_pressed(KeyRepeat::No);
+
+        for key in keys.unwrap_or(vec![]) {
+            match key {
+                Key::A => {
+                    // aperture
+                    println!("mode switched to aperture mode");
+                    println!("{:?}", aperture_radius);
+                    last_pressed_hotkey = Key::A;
+                }
+                Key::F => {
+                    // Film
+                    println!("mode switched to Film position (focus) mode");
+                    println!(
+                        "{:?}, {:?}",
+                        film_position,
+                        lens_assembly.total_thickness_at(lens_zoom)
+                    );
+                    last_pressed_hotkey = Key::F;
+                }
+                Key::W => {
+                    // Wall
+                    println!("mode switched to Wall position mode");
+                    println!("{:?}", wall_position);
+                    println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
+                    last_pressed_hotkey = Key::W;
+                }
+                Key::R => {
+                    // Wall
+                    println!("mode switched to wavelength sweep speed mode");
+                    println!("{:?}", wavelength_sweep_speed);
+                    last_pressed_hotkey = Key::R;
+                }
+                Key::H => {
+                    // Heat
+                    println!("mode switched to Heat mode");
+                    last_pressed_hotkey = Key::H;
+                }
+                Key::Z => {
+                    // zoom
+                    println!("mode switched to zoom mode");
+                    last_pressed_hotkey = Key::Z;
+                }
+                Key::S => {
+                    // samples
+                    println!("mode switched to samples mode");
+                    last_pressed_hotkey = Key::S;
+                }
+
+                Key::C => {
+                    // heat cap
+                    println!("mode switched to heat cap mode");
+                    last_pressed_hotkey = Key::C;
+                }
+                Key::E => {
+                    // film size.
+                    println!("mode switched to film size mode");
+                    println!("{:?}", sensor_size);
+                    last_pressed_hotkey = Key::E;
+                }
+                Key::NumPadMinus | Key::NumPadPlus => {
+                    // pass
+                }
+                _ => {
+                    println!("available keys are as follows. \nA => Aperture mode\nF => Focus mode\nW => Wall position mode\nH => Heat multiplier mode\nC => Heat Cap mode\nE => Film Span mode. allows for artificial zoom.\nS => Samples per frame mode\nZ => Zoom mode (only affects zoomable lenses)\n")
+                }
             }
         }
-        if window.is_key_pressed(Key::Equal, KeyRepeat::Yes) {
-            println!("{:?}", samples_per_iteration);
-            samples_per_iteration += 1;
+        if window.is_key_pressed(Key::NumPadPlus, KeyRepeat::Yes) {
+            match last_pressed_hotkey {
+                Key::A => {
+                    // aperture
+                    aperture_radius *= 1.1;
+                    println!("{:?}", aperture_radius);
+                }
+                Key::F => {
+                    // Film
+                    clear(&mut film);
+                    clear_direction_filter(&mut direction_filter_film);
+                    total_samples = 0;
+                    println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
+                    film_position += 1.0;
+                    println!(
+                        "{:?}, {:?}",
+                        film_position,
+                        lens_assembly.total_thickness_at(lens_zoom)
+                    );
+                }
+                Key::W => {
+                    // Wall
+
+                    clear(&mut film);
+                    clear_direction_filter(&mut direction_filter_film);
+                    total_samples = 0;
+                    wall_position += 10.0;
+                    println!("{:?}", wall_position);
+                    println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
+                }
+                Key::H => {
+                    // Heat
+                    heat_bias *= 1.1;
+                    println!("{:?}", heat_bias);
+                }
+                Key::R => {
+                    // Heat
+                    wavelength_sweep_speed *= 1.1;
+                    println!("{:?}", wavelength_sweep_speed);
+                }
+                Key::C => {
+                    // heat cap
+                    heat_cap *= 1.1;
+                    println!("{:?}", heat_cap);
+                }
+                Key::Z => {
+                    clear(&mut film);
+                    clear_direction_filter(&mut direction_filter_film);
+                    total_samples = 0;
+                    lens_zoom += 0.01;
+                    println!("{:?}", lens_zoom);
+                }
+                Key::S => {
+                    samples_per_iteration += 1;
+                    println!("{:?}", samples_per_iteration);
+                }
+                Key::E => {
+                    clear(&mut film);
+                    clear_direction_filter(&mut direction_filter_film);
+                    total_samples = 0;
+                    println!("{:?}", sensor_size);
+                    sensor_size *= 1.1;
+                }
+                _ => {}
+            }
+        }
+        if window.is_key_pressed(Key::NumPadMinus, KeyRepeat::Yes) {
+            match last_pressed_hotkey {
+                Key::A => {
+                    // aperture
+                    aperture_radius /= 1.1;
+                    println!("{:?}", aperture_radius);
+                }
+                Key::F => {
+                    // Film
+                    clear(&mut film);
+                    clear_direction_filter(&mut direction_filter_film);
+                    total_samples = 0;
+                    println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
+                    film_position -= 1.0;
+                    println!(
+                        "{:?}, {:?}",
+                        film_position,
+                        lens_assembly.total_thickness_at(lens_zoom)
+                    );
+                }
+                Key::W => {
+                    // Wall
+
+                    clear(&mut film);
+                    clear_direction_filter(&mut direction_filter_film);
+                    total_samples = 0;
+                    wall_position -= 10.0;
+                    println!("{:?}", wall_position);
+                    println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
+                }
+                Key::H => {
+                    // Heat
+
+                    heat_bias /= 1.1;
+                    println!("{:?}", heat_bias);
+                }
+                Key::R => {
+                    // Heat
+                    wavelength_sweep_speed /= 1.1;
+                    println!("{:?}", wavelength_sweep_speed);
+                }
+                Key::C => {
+                    // heat cap
+                    heat_cap /= 1.1;
+                    println!("{:?}", heat_cap);
+                }
+                Key::Z => {
+                    // Zoom
+                    clear(&mut film);
+                    clear_direction_filter(&mut direction_filter_film);
+                    total_samples = 0;
+                    lens_zoom -= 0.01;
+                    println!("{:?}", lens_zoom);
+                }
+                Key::S => {
+                    if samples_per_iteration > 2 {
+                        samples_per_iteration -= 1;
+                    }
+                    println!("{:?}", samples_per_iteration);
+                }
+                Key::E => {
+                    clear(&mut film);
+                    clear_direction_filter(&mut direction_filter_film);
+                    total_samples = 0;
+                    println!("{:?}", sensor_size);
+                    sensor_size /= 1.1;
+                }
+                _ => {}
+            }
         }
         if window.is_key_pressed(Key::Space, KeyRepeat::Yes) {
             clear(&mut film);
-            clear_direction_filter(&mut direction_filter_film);
+            wavelength_sweep = 0.0;
             total_samples = 0;
         }
         if window.is_key_pressed(Key::V, KeyRepeat::Yes) {
             println!("total samples: {}", total_samples);
         }
+        if window.is_key_pressed(Key::B, KeyRepeat::No) {
+            clear_direction_filter(&mut direction_filter_film);
+        }
+
+        let srgb_tonemapper = sRGB::new(&film, 1.0);
 
         let wavelength_bounds = BOUNDED_VISIBLE_RANGE;
 
@@ -255,8 +392,7 @@ fn main() {
         ) - origin;
         let maximum_angle = -(direction.y() / direction.z()).atan();
 
-        let mut center_of_mass = Point3::ZERO;
-        let mut ct = 0;
+        focal_distance_vec.clear();
         for i in 0..n {
             // choose angle to shoot ray from (0.0, 0.0, wall_position)
             let angle = ((i as f32 + 0.5) / n as f32) * maximum_angle;
@@ -273,24 +409,31 @@ fn main() {
                     tau,
                 }) = result
                 {
-                    ct += 1;
                     let dt = (-pupil_ray.origin.y()) / pupil_ray.direction.y();
                     let point = pupil_ray.point_at_parameter(dt);
                     // println!("{:?}", point);
 
-                    center_of_mass += Vec3::from(point);
+                    if point.z().is_finite() {
+                        focal_distance_vec.push(point.z());
+                    }
                 }
             }
         }
-        if ct > 0 {
-            if center_of_mass.z().is_nan() {
-                focal_distance_suggestion = None;
-            } else {
-                focal_distance_suggestion = Some(center_of_mass.z() / ct as f32);
-            }
+        if focal_distance_vec.len() > 0 {
+            let avg: f32 = focal_distance_vec.iter().sum::<f32>() / focal_distance_vec.len() as f32;
+            focal_distance_suggestion = Some(avg);
+            variance = focal_distance_vec
+                .iter()
+                .map(|e| (avg - *e).powf(2.0))
+                .sum::<f32>()
+                / focal_distance_vec.len() as f32;
+            stddev = variance.sqrt();
         }
 
         total_samples += samples_per_iteration;
+        wavelength_sweep += wavelength_sweep_speed;
+        wavelength_sweep %= 1.0;
+        let lambda = wavelength_bounds.span() * wavelength_sweep + wavelength_bounds.lower;
 
         film.buffer
             .par_iter_mut()
@@ -303,9 +446,6 @@ fn main() {
                 let mut heat = direction.w();
 
                 for _ in 0..samples_per_iteration {
-                    let mut attempts = 0;
-
-                    let mut successes = 0;
                     let (x, y, z) = (
                         ((px as f32 + random::<f32>()) / width as f32 - 0.5) * sensor_size,
                         ((py as f32 + random::<f32>()) / height as f32 - 0.5) * sensor_size,
@@ -322,24 +462,21 @@ fn main() {
                     let ray = Ray::new(Point3::new(x, y, z), v.normalized());
 
                     let mut energy = 0.0f32;
-                    let lambda = wavelength_bounds.span() * Sample1D::new_random_sample().x
-                        + wavelength_bounds.lower;
+
                     let result =
                         lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
                             (e.origin.x().hypot(e.origin.y()) > aperture_radius, false)
                         });
-                    attempts += 1;
                     if let Some(Output {
                         ray: pupil_ray,
                         tau,
                     }) = result
                     {
                         *direction = ray.direction;
-                        if heat < 10.0 {
+                        if heat < heat_cap {
                             heat *= 1.0 + heat_bias;
                             direction.0 = direction.0.replace(3, heat);
                         }
-                        successes += 1;
                         let t = (wall_position - pupil_ray.origin.z()) / pupil_ray.direction.z();
                         let point_at_10 = pupil_ray.point_at_parameter(t);
                         let uv = (
@@ -357,7 +494,7 @@ fn main() {
                         *pixel += XYZColor::from_wavelength_and_energy(lambda, energy);
                     } else {
                         if heat > 0.1 {
-                            heat /= 1.0 + heat_bias;
+                            heat /= 1.1;
                             direction.0 = direction.0.replace(3, heat);
                         }
                     }
