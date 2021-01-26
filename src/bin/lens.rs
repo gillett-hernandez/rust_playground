@@ -63,14 +63,33 @@ fn main() {
     // 40.93		10.64		air		       			17.3
     // 183.92		7.05		LAK9	1.6910  54.8   	16.5
     // -48.91		79.831		air						16.5"; // brendel tressar
-    let spec = "52.9     5.8  abbe   1.517  62 15
-    -41.4    1.5  abbe   1.576  54 15
-    436.2    23.3 air              15
-    100000.0 23.3 iris             10
-    104.8    2.2  abbe   1.517  62 9
-    36.8     0.7  air              9
-    45.5     3.6  abbe   1.576  54 9
-    -149.5   50   air              9"; // petzval
+    // let spec = "52.9     5.8  abbe   1.517  62 15
+    // -41.4    1.5  abbe   1.576  54 15
+    // 436.2    23.3 air              15
+    // 100000.0 23.3 iris             10
+    // 104.8    2.2  abbe   1.517  62 9
+    // 36.8     0.7  air              9
+    // 45.5     3.6  abbe   1.576  54 9
+    // -149.5   50   air              9"; // petzval
+    // let spec = "164.12		10.99				SF5			1.673	32.2	54
+    // 559.28		0.23				air							54
+    // 100.12		11.45				BAF10		1.67	47.1    51
+    // 213.54		0.23				air							51
+    // 58.04		22.95				LAK9		1.691	54.7	41
+    // 2551		2.58				SF5			1.673	32.2	41
+    // 32.39		15.66				air							27
+    // 10000		15.00				IRIS						25.5
+    // -40.42		2.74				SF15		1.699	30.1	25
+    // 192.98		27.92				SK16		1.62	60.3	36
+    // -55.53		0.23				air							36
+    // 192.98		7.98				LAK9		1.691	54.7	35
+    // -225.28		0.23				air							35
+    // 175.1		8.48				LAK9		1.691	54.7	35
+    // -203.54		55.742				air							35"; // double gauss angenioux
+    let spec = "65.22    9.60  N-SSK8 1.5 50 24.0
+    -62.03   4.20  N-SF10 1.5 50 24.0
+    -1240.67 5.00  air           24.0
+    100000  105.00  iris          20.0"; // lensbaby
     let (lenses, last_ior, last_vno) = parse_lenses_from(spec);
     let lens_assembly = LensAssembly::new(&lenses);
 
@@ -81,8 +100,8 @@ fn main() {
         textures.push(parse_texture_stack(tex.clone()));
     }
 
-    let mut aperture_size = lens_assembly.aperture_radius() / 2.0;
-    let mut heat_bias = 1.1;
+    let mut aperture_radius = lens_assembly.aperture_radius();
+    let mut heat_bias = 0.1;
     let mut lens_zoom = 0.0;
     let mut film_position = -lens_assembly.total_thickness_at(lens_zoom);
     let mut wall_position = 240.0;
@@ -103,15 +122,15 @@ fn main() {
             // clear(&mut film);
             // clear_direction_filter(&mut direction_filter_film);
             // total_samples = 0;
-            println!("{:?}", aperture_size);
-            aperture_size /= 1.1;
+            println!("{:?}", aperture_radius);
+            aperture_radius /= 1.1;
         }
         if window.is_key_pressed(Key::RightBracket, KeyRepeat::Yes) {
             // clear(&mut film);
             // clear_direction_filter(&mut direction_filter_film);
             // total_samples = 0;
-            println!("{:?}", aperture_size);
-            aperture_size *= 1.1;
+            println!("{:?}", aperture_radius);
+            aperture_radius *= 1.1;
         }
         if window.is_key_pressed(Key::N, KeyRepeat::Yes) {
             // clear(&mut film);
@@ -248,10 +267,7 @@ fn main() {
                         + wavelength_bounds.lower;
                     let result =
                         lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
-                            (
-                                e.origin.x().hypot(e.origin.y()) > aperture_size / 2.0,
-                                false,
-                            )
+                            (e.origin.x().hypot(e.origin.y()) > aperture_radius, false)
                         });
                     attempts += 1;
                     if let Some(Output {
@@ -260,8 +276,8 @@ fn main() {
                     }) = result
                     {
                         *direction = ray.direction;
-                        if heat < 100.0 {
-                            heat *= heat_bias;
+                        if heat < 10.0 {
+                            heat *= 1.0 + heat_bias;
                             direction.0 = direction.0.replace(3, heat);
                         }
                         successes += 1;
@@ -281,8 +297,8 @@ fn main() {
                         // );
                         *pixel += XYZColor::from_wavelength_and_energy(lambda, energy);
                     } else {
-                        if heat > 1.1 {
-                            heat /= heat_bias;
+                        if heat > 0.1 {
+                            heat /= 1.0 + heat_bias;
                             direction.0 = direction.0.replace(3, heat);
                         }
                     }
