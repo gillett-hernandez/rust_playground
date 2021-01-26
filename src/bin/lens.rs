@@ -159,8 +159,9 @@ fn main() {
     let mut direction_filter_film = Film::new(film.width, film.height, Vec3::Z);
 
     let mut last_pressed_hotkey = Key::A;
-    let mut wavelength_sweep = 0.0;
+    let mut wavelength_sweep: f32 = 0.0;
     let mut wavelength_sweep_speed = 0.001;
+    let mut texture_scale = 10.0;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let keys = window.get_keys_pressed(KeyRepeat::No);
 
@@ -216,6 +217,11 @@ fn main() {
                     println!("mode switched to heat cap mode");
                     last_pressed_hotkey = Key::C;
                 }
+                Key::T => {
+                    // heat cap
+                    println!("mode switched to texture scale mode");
+                    last_pressed_hotkey = Key::T;
+                }
                 Key::E => {
                     // film size.
                     println!("mode switched to film size mode");
@@ -226,7 +232,7 @@ fn main() {
                     // pass
                 }
                 _ => {
-                    println!("available keys are as follows. \nA => Aperture mode\nF => Focus mode\nW => Wall position mode\nH => Heat multiplier mode\nC => Heat Cap mode\nE => Film Span mode. allows for artificial zoom.\nS => Samples per frame mode\nZ => Zoom mode (only affects zoomable lenses)\n")
+                    println!("available keys are as follows. \nA => Aperture mode\nF => Focus mode\nW => Wall position mode\nH => Heat multiplier mode\nC => Heat Cap mode\nT => texture scale mode\nR => Wavelength sweep speed mode\nE => Film Span mode. allows for artificial zoom.\nS => Samples per frame mode\nZ => Zoom mode (only affects zoomable lenses)\n")
                 }
             }
         }
@@ -274,6 +280,11 @@ fn main() {
                     // heat cap
                     heat_cap *= 1.1;
                     println!("{:?}", heat_cap);
+                }
+                Key::T => {
+                    // texture scale
+                    texture_scale *= 1.1;
+                    println!("{:?}", texture_scale);
                 }
                 Key::Z => {
                     clear(&mut film);
@@ -342,6 +353,11 @@ fn main() {
                     heat_cap /= 1.1;
                     println!("{:?}", heat_cap);
                 }
+                Key::T => {
+                    // texture scale
+                    texture_scale /= 1.1;
+                    println!("{:?}", texture_scale);
+                }
                 Key::Z => {
                     // Zoom
                     clear(&mut film);
@@ -373,6 +389,7 @@ fn main() {
         }
         if window.is_key_pressed(Key::V, KeyRepeat::Yes) {
             println!("total samples: {}", total_samples);
+            println!("wavelength_sweep: {}", wavelength_sweep);
         }
         if window.is_key_pressed(Key::B, KeyRepeat::No) {
             clear_direction_filter(&mut direction_filter_film);
@@ -432,8 +449,9 @@ fn main() {
 
         total_samples += samples_per_iteration;
         wavelength_sweep += wavelength_sweep_speed;
-        wavelength_sweep %= 1.0;
-        let lambda = wavelength_bounds.span() * wavelength_sweep + wavelength_bounds.lower;
+        wavelength_sweep %= 2.0;
+        let lambda =
+            wavelength_bounds.span() * (1.0 - wavelength_sweep).abs() + wavelength_bounds.lower;
 
         film.buffer
             .par_iter_mut()
@@ -480,8 +498,8 @@ fn main() {
                         let t = (wall_position - pupil_ray.origin.z()) / pupil_ray.direction.z();
                         let point_at_10 = pupil_ray.point_at_parameter(t);
                         let uv = (
-                            (point_at_10.x().abs() / 50.0) % 1.0,
-                            (point_at_10.y().abs() / 50.0) % 1.0,
+                            (point_at_10.x().abs() / texture_scale) % 1.0,
+                            (point_at_10.y().abs() / texture_scale) % 1.0,
                         );
 
                         let m = textures[0].eval_at(lambda, uv);

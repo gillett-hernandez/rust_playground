@@ -60,8 +60,8 @@ impl Bounds2D {
     }
 }
 
-pub const EXTENDED_VISIBLE_RANGE: Bounds1D = Bounds1D::new(370.0, 790.0);
-pub const BOUNDED_VISIBLE_RANGE: Bounds1D = Bounds1D::new(380.0, 780.0);
+pub const EXTENDED_VISIBLE_RANGE: Bounds1D = Bounds1D::new(370.0, 760.0);
+pub const BOUNDED_VISIBLE_RANGE: Bounds1D = Bounds1D::new(380.0, 750.0);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Point3(pub f32x4);
