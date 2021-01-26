@@ -86,10 +86,18 @@ fn main() {
     // -225.28		0.23				air							35
     // 175.1		8.48				LAK9		1.691	54.7	35
     // -203.54		55.742				air							35"; // double gauss angenioux
-    let spec = "65.22    9.60  N-SSK8 1.5 50 24.0
-    -62.03   4.20  N-SF10 1.5 50 24.0
-    -1240.67 5.00  air           24.0
-    100000  105.00  iris          20.0"; // lensbaby
+    // let spec = "65.22    9.60  N-SSK8 1.5 50 24.0
+    // -62.03   4.20  N-SF10 1.5 50 24.0
+    // -1240.67 5.00  air           24.0
+    // 100000  105.00  iris          20.0"; // lensbaby
+    let spec = " 70.97  15.0 abbe 1.523 58.6  23
+    -56.79   4.5 abbe 1.617 38.5  23
+    100000.0 24.0 air             23
+    100000.0 25.3 iris            18
+    119.91   3.8 abbe 1.649 33.8  15
+    40.87    0.9 air              15
+    46.87    7.4 abbe 1.697 56.1  15
+    -282.05 56.5 air              15"; // petzval kodak
     let (lenses, last_ior, last_vno) = parse_lenses_from(spec);
     let lens_assembly = LensAssembly::new(&lenses);
 
@@ -108,6 +116,7 @@ fn main() {
     let mut sensor_size = 35.0;
     let mut samples_per_iteration = 1usize;
     let mut total_samples = 0;
+    let mut focal_distance_suggestion = None;
     let clear = |film: &mut Film<XYZColor>| {
         film.buffer
             .par_iter_mut()
@@ -155,6 +164,7 @@ fn main() {
                 film_position,
                 lens_assembly.total_thickness_at(lens_zoom)
             );
+            println!("{:?}", focal_distance_suggestion);
             film_position -= 1.0;
         }
         if window.is_key_pressed(Key::P, KeyRepeat::Yes) {
@@ -166,6 +176,7 @@ fn main() {
                 film_position,
                 lens_assembly.total_thickness_at(lens_zoom)
             );
+            println!("{:?}", focal_distance_suggestion);
             film_position += 1.0;
         }
         if window.is_key_pressed(Key::Q, KeyRepeat::Yes) {
@@ -173,6 +184,7 @@ fn main() {
             clear_direction_filter(&mut direction_filter_film);
             total_samples = 0;
             println!("{:?}", wall_position);
+            println!("{:?}", focal_distance_suggestion);
             wall_position -= 10.0;
         }
         if window.is_key_pressed(Key::W, KeyRepeat::Yes) {
@@ -180,6 +192,7 @@ fn main() {
             clear_direction_filter(&mut direction_filter_film);
             total_samples = 0;
             println!("{:?}", wall_position);
+            println!("{:?}", focal_distance_suggestion);
             wall_position += 10.0;
         }
         if window.is_key_pressed(Key::Z, KeyRepeat::Yes) {
@@ -231,6 +244,52 @@ fn main() {
         }
 
         let wavelength_bounds = BOUNDED_VISIBLE_RANGE;
+
+        // autofocus:
+        let n = 25;
+        let origin = Point3::new(0.0, 0.0, film_position);
+        let direction = Point3::new(
+            0.0,
+            lens_assembly.lenses.last().unwrap().housing_radius,
+            0.0,
+        ) - origin;
+        let maximum_angle = -(direction.y() / direction.z()).atan();
+
+        let mut center_of_mass = Point3::ZERO;
+        let mut ct = 0;
+        for i in 0..n {
+            // choose angle to shoot ray from (0.0, 0.0, wall_position)
+            let angle = ((i as f32 + 0.5) / n as f32) * maximum_angle;
+            let ray = Ray::new(origin, Vec3::new(0.0, angle.sin(), angle.cos()));
+            // println!("{:?}", ray);
+            for w in 0..10 {
+                let lambda = wavelength_bounds.lower + (w as f32 / 10.0) * wavelength_bounds.span();
+                let result =
+                    lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
+                        (e.origin.x().hypot(e.origin.y()) > aperture_radius, false)
+                    });
+                if let Some(Output {
+                    ray: pupil_ray,
+                    tau,
+                }) = result
+                {
+                    ct += 1;
+                    let dt = (-pupil_ray.origin.y()) / pupil_ray.direction.y();
+                    let point = pupil_ray.point_at_parameter(dt);
+                    // println!("{:?}", point);
+
+                    center_of_mass += Vec3::from(point);
+                }
+            }
+        }
+        if ct > 0 {
+            if center_of_mass.z().is_nan() {
+                focal_distance_suggestion = None;
+            } else {
+                focal_distance_suggestion = Some(center_of_mass.z() / ct as f32);
+            }
+        }
+
         total_samples += samples_per_iteration;
 
         film.buffer

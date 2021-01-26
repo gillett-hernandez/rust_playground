@@ -298,55 +298,66 @@ impl LensAssembly {
         let mut ray = input.ray;
         let mut intensity = 1.0;
         let mut distsum = 0.0;
+
+        let t = (-ray.origin.z()) / (ray.direction.z());
+        ray.origin = ray.point_at_parameter(t);
         ray.direction = -ray.direction;
+        ray.origin = Point3::from(-Vec3::from(ray.origin));
         for (_k, lens) in self.lenses.iter().enumerate() {
+            let r = lens.radius;
+
+            let dist = lens.thickness_at(zoom);
+
+            distsum += dist;
             if lens.lens_type == LensType::Aperture {
                 match aperture_hook(ray) {
                     (false, true) => {
+                        // not blocked by aperture, but still should return early
                         return Some(Output {
                             ray,
                             tau: intensity,
                         });
                     }
-                    (_, _) => {
-                        // blocked by aperture and should return
+                    (false, false) => {}
+                    (true, _) => {
+                        // blocked by aperture (and so no need to trace more) or should return early
                         return None;
                     }
                 }
             }
-            let r = -lens.radius;
-
-            let dist = lens.thickness_at(zoom);
             let res: (Ray, Vec3);
             if lens.anamorphic {
-                res = trace_cylindrical(ray, r, distsum + r, lens.housing_radius).unwrap();
+                res = trace_cylindrical(ray, r, distsum - r, lens.housing_radius).ok()?;
             } else if lens.aspheric > 0 {
                 res = trace_aspherical(
                     ray,
                     r,
-                    distsum + r,
+                    distsum - r,
                     lens.aspheric,
                     lens.correction,
                     lens.housing_radius,
                 )
-                .unwrap();
+                .ok()?;
             } else {
-                res = trace_spherical(ray, r, distsum + r, lens.housing_radius).unwrap();
+                res = trace_spherical(ray, r, distsum - r, lens.housing_radius).ok()?;
             }
             ray = res.0;
             let normal = res.1;
+
             let n2 = spectrum_eta_from_abbe_num(lens.ior, lens.vno, input.lambda);
             // if we were to implement reflection as well, it would probably be here and would probably be probabilistic
             let res = refract(n1, n2, normal, ray.direction);
             ray.direction = res.0;
+
+            println!("new ray {:?}", ray);
             intensity *= res.1;
+
             if intensity < INTENSITY_EPS {
                 error |= 8;
             }
             if error > 0 {
                 return None;
             }
-            distsum -= dist;
             n1 = n2;
         }
         Some(Output {
