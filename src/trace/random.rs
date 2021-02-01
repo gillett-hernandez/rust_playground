@@ -1,4 +1,4 @@
-use crate::math::{Sample2D, Vec3};
+use crate::math::{Sample1D, Sample2D, Sample3D, Vec3};
 use std::f32::{consts::PI, INFINITY};
 
 pub fn random_on_unit_sphere(r: Sample2D) -> Vec3 {
@@ -56,4 +56,30 @@ pub fn random_to_sphere(r: Sample2D, radius: f32, distance_squared: f32) -> Vec3
     x *= sqrt_1_z2;
     y *= sqrt_1_z2;
     return Vec3::new(x, y, z);
+}
+
+pub trait Sampler {
+    fn draw_1d(&mut self) -> Sample1D;
+    fn draw_2d(&mut self) -> Sample2D;
+    fn draw_3d(&mut self) -> Sample3D;
+}
+
+pub struct RandomSampler {}
+
+impl RandomSampler {
+    pub const fn new() -> RandomSampler {
+        RandomSampler {}
+    }
+}
+
+impl Sampler for RandomSampler {
+    fn draw_1d(&mut self) -> Sample1D {
+        Sample1D::new_random_sample()
+    }
+    fn draw_2d(&mut self) -> Sample2D {
+        Sample2D::new_random_sample()
+    }
+    fn draw_3d(&mut self) -> Sample3D {
+        Sample3D::new_random_sample()
+    }
 }

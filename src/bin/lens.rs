@@ -24,11 +24,11 @@ const WINDOW_HEIGHT: usize = 800;
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(22 as usize)
+        .num_threads(23 as usize)
         .build_global()
         .unwrap();
     let mut window = Window::new(
-        "Swarm",
+        "Lens",
         WINDOW_WIDTH,
         WINDOW_HEIGHT,
         WindowOptions {
@@ -162,6 +162,7 @@ fn main() {
     let mut wavelength_sweep: f32 = 0.0;
     let mut wavelength_sweep_speed = 0.001;
     let mut texture_scale = 10.0;
+    let mut efficiency = 0.0;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let keys = window.get_keys_pressed(KeyRepeat::No);
 
@@ -390,6 +391,7 @@ fn main() {
         if window.is_key_pressed(Key::V, KeyRepeat::Yes) {
             println!("total samples: {}", total_samples);
             println!("wavelength_sweep: {}", wavelength_sweep);
+            println!("sampling efficiency is {}", efficiency);
         }
         if window.is_key_pressed(Key::B, KeyRepeat::No) {
             clear_direction_filter(&mut direction_filter_film);
@@ -453,15 +455,17 @@ fn main() {
         let lambda =
             wavelength_bounds.span() * (1.0 - wavelength_sweep).abs() + wavelength_bounds.lower;
 
-        film.buffer
+        let (a, b) = film
+            .buffer
             .par_iter_mut()
             .zip(direction_filter_film.buffer.par_iter_mut())
             .enumerate()
-            .for_each(|(i, (pixel, direction))| {
+            .map(|(i, (pixel, direction))| {
                 let px = i % width;
                 let py = i / width;
 
                 let mut heat = direction.w();
+                let (mut successes, mut attempts) = (0, 0);
 
                 for _ in 0..samples_per_iteration {
                     let (x, y, z) = (
@@ -476,11 +480,16 @@ fn main() {
                         TangentFrame::from_normal(Vec3::from_raw((*direction).0.replace(3, 0.0)));
                     let mut v = random_cosine_direction(s2d);
                     v += Vec3::Z * heat;
-                    let v = frame.to_world(&v.normalized());
+                    let mut v = frame.to_world(&v.normalized());
+                    if v.z() <= 0.0 {
+                        v += Vec3::Z * (v.z().abs() + 0.01);
+                    }
+                    assert!(v.z() > 0.0, "v {:?}", v);
                     let ray = Ray::new(Point3::new(x, y, z), v.normalized());
 
                     let mut energy = 0.0f32;
 
+                    attempts += 1;
                     let result =
                         lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
                             (e.origin.x().hypot(e.origin.y()) > aperture_radius, false)
@@ -490,6 +499,7 @@ fn main() {
                         tau,
                     }) = result
                     {
+                        successes += 1;
                         *direction = ray.direction;
                         if heat < heat_cap {
                             heat *= 1.0 + heat_bias;
@@ -502,7 +512,18 @@ fn main() {
                             (point_at_10.y().abs() / texture_scale) % 1.0,
                         );
 
-                        let m = textures[0].eval_at(lambda, uv);
+                        // // texture based
+                        // let m = textures[0].eval_at(lambda, uv);
+                        // // spot light based
+                        let m = if (uv.0 - 0.5).powi(2) + (uv.1 - 0.5).powi(2) < 0.002 {
+                            if pupil_ray.direction.z() > 0.999 {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        } else {
+                            0.0
+                        };
                         energy += tau * m * 3.0;
                         // *pixel = XYZColor::new(
                         //     (1.0 + direction.x()) * (1.0 + direction.w()),
@@ -517,7 +538,10 @@ fn main() {
                         }
                     }
                 }
-            });
+                (successes, attempts)
+            })
+            .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+        efficiency = 0.1 * efficiency + 0.9 * (a as f32 / b as f32);
 
         buffer
             .buffer

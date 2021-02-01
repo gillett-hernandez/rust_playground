@@ -497,7 +497,7 @@ impl Sample1D {
         Sample1D { x }
     }
     pub fn new_random_sample() -> Self {
-        Sample1D::new(rand::random())
+        Sample1D::new(rand::random::<f32>())
     }
     pub fn choose<T>(mut self, split: f32, a: T, b: T) -> (Self, T) {
         debug_assert!(0.0 <= split && split <= 1.0);
@@ -531,6 +531,22 @@ impl Sample2D {
     }
     pub fn new_random_sample() -> Self {
         Sample2D::new(rand::random(), rand::random())
+    }
+}
+
+#[derive(Debug)]
+pub struct Sample3D {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl Sample3D {
+    pub const fn new(x: f32, y: f32, z: f32) -> Self {
+        Sample3D { x, y, z }
+    }
+    pub fn new_random_sample() -> Self {
+        Sample3D::new(rand::random(), rand::random(), rand::random())
     }
 }
 
