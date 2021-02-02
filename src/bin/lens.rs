@@ -524,6 +524,7 @@ fn main() {
                         } else {
                             0.0
                         };
+
                         energy += tau * m * 3.0;
                         // *pixel = XYZColor::new(
                         //     (1.0 + direction.x()) * (1.0 + direction.w()),
