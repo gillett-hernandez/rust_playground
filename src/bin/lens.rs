@@ -19,6 +19,31 @@ fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
     ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
+fn circular_aperture(aperture_radius: f32, ray: Ray) -> bool {
+    ray.origin.x().hypot(ray.origin.y()) > aperture_radius
+}
+
+fn bladed_aperture(aperture_radius: f32, blades: usize, ray: Ray) -> bool {
+    match blades {
+        6 => {
+            let phi = std::f32::consts::PI / 6.0;
+            let top = Vec3::new(phi.cos(), phi.sin(), 0.0);
+            let bottom = Vec3::new(phi.cos(), -phi.sin(), 0.0);
+            let mut point = Vec3::from(ray.origin);
+            point.0 = point.0.replace(2, 0.0);
+            point = point.normalized();
+            let cos_top = point * top;
+            let cos_bottom = point * bottom;
+            let cos_apex = point.z();
+            let minimum = ((1.0 + cos_top.abs().powf(0.5)) / cos_top.abs())
+                .min((1.0 + cos_bottom.abs().powf(0.5)) / cos_bottom.abs())
+                .min((1.0 + cos_apex.abs().powf(0.5)) / cos_apex.abs());
+            point.x().hypot(point.y()) > minimum * aperture_radius
+        }
+        _ => circular_aperture(aperture_radius, ray),
+    }
+}
+
 const WINDOW_WIDTH: usize = 800;
 const WINDOW_HEIGHT: usize = 800;
 
@@ -136,7 +161,8 @@ fn main() {
         textures.push(parse_texture_stack(tex.clone()));
     }
 
-    let mut aperture_radius = lens_assembly.aperture_radius();
+    let original_aperture_radius = lens_assembly.aperture_radius();
+    let mut aperture_radius = original_aperture_radius / 2.0;
     let mut heat_bias = 0.1;
     let mut heat_cap = 10.0;
     let mut lens_zoom = 0.0;
@@ -171,7 +197,11 @@ fn main() {
                 Key::A => {
                     // aperture
                     println!("mode switched to aperture mode");
-                    println!("{:?}", aperture_radius);
+                    println!(
+                        "{:?}, f stop = {:?}",
+                        aperture_radius,
+                        original_aperture_radius / aperture_radius
+                    );
                     last_pressed_hotkey = Key::A;
                 }
                 Key::F => {
@@ -242,7 +272,11 @@ fn main() {
                 Key::A => {
                     // aperture
                     aperture_radius *= 1.1;
-                    println!("{:?}", aperture_radius);
+                    println!(
+                        "{:?}, f stop = {:?}",
+                        aperture_radius,
+                        original_aperture_radius / aperture_radius
+                    );
                 }
                 Key::F => {
                     // Film
@@ -313,7 +347,11 @@ fn main() {
                 Key::A => {
                     // aperture
                     aperture_radius /= 1.1;
-                    println!("{:?}", aperture_radius);
+                    println!(
+                        "{:?}, f stop = {:?}",
+                        aperture_radius,
+                        original_aperture_radius / aperture_radius
+                    );
                 }
                 Key::F => {
                     // Film
@@ -421,7 +459,7 @@ fn main() {
                 let lambda = wavelength_bounds.lower + (w as f32 / 10.0) * wavelength_bounds.span();
                 let result =
                     lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
-                        (e.origin.x().hypot(e.origin.y()) > aperture_radius, false)
+                        (bladed_aperture(aperture_radius, 6, e), false)
                     });
                 if let Some(Output {
                     ray: pupil_ray,
@@ -492,7 +530,7 @@ fn main() {
                     attempts += 1;
                     let result =
                         lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
-                            (e.origin.x().hypot(e.origin.y()) > aperture_radius, false)
+                            (bladed_aperture(aperture_radius, 6, e), false)
                         });
                     if let Some(Output {
                         ray: pupil_ray,
@@ -515,8 +553,9 @@ fn main() {
                         // // texture based
                         // let m = textures[0].eval_at(lambda, uv);
                         // // spot light based
-                        let m = if (uv.0 - 0.5).powi(2) + (uv.1 - 0.5).powi(2) < 0.002 {
-                            if pupil_ray.direction.z() > 0.999 {
+                        let m = if (uv.0 - 0.5).powi(2) + (uv.1 - 0.5).powi(2) < 0.001 {
+                            // 1.0
+                            if pupil_ray.direction.z() > 0.99 {
                                 1.0
                             } else {
                                 0.0
