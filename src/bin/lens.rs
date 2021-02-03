@@ -19,6 +19,18 @@ fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
     ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
+enum Mode {
+    Texture,
+    PinLight,
+    Direction,
+}
+
+enum State {
+    Searching,
+    Growing,
+    Shrinking,
+}
+
 const WINDOW_WIDTH: usize = 800;
 const WINDOW_HEIGHT: usize = 800;
 
@@ -163,6 +175,7 @@ fn main() {
     let mut wavelength_sweep_speed = 0.001;
     let mut texture_scale = 10.0;
     let mut efficiency = 0.0;
+    let mut mode = Mode::Texture;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let keys = window.get_keys_pressed(KeyRepeat::No);
 
@@ -396,6 +409,14 @@ fn main() {
         if window.is_key_pressed(Key::B, KeyRepeat::No) {
             clear_direction_filter(&mut direction_filter_film);
         }
+        if window.is_key_pressed(Key::M, KeyRepeat::No) {
+            // do mode transition
+            mode = match mode {
+                Mode::Texture => Mode::PinLight,
+                Mode::PinLight => Mode::Direction,
+                Mode::Direction => Mode::Texture,
+            };
+        }
 
         let srgb_tonemapper = sRGB::new(&film, 1.0);
 
@@ -464,32 +485,173 @@ fn main() {
                 let px = i % width;
                 let py = i / width;
 
-                let mut heat = direction.w();
+                let mut radius = direction.w();
                 let (mut successes, mut attempts) = (0, 0);
 
-                for _ in 0..samples_per_iteration {
-                    let (x, y, z) = (
-                        ((px as f32 + random::<f32>()) / width as f32 - 0.5) * sensor_size,
-                        ((py as f32 + random::<f32>()) / height as f32 - 0.5) * sensor_size,
-                        film_position,
-                    );
+                let central_point = Point3::new(
+                    ((px as f32 + 0.5) / width as f32 - 0.5) * sensor_size,
+                    ((py as f32 + 0.5) / height as f32 - 0.5) * sensor_size,
+                    film_position,
+                );
+                let mut direction_accumulator = Vec3::ZERO;
 
-                    // choose direction somehow.
+                let mut state = State::Searching;
+
+                loop {
+                    match state {
+                        State::Searching => {
+                            // println!("searching branch, radius = {}", radius);
+                            let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
+                            x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
+                            y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
+
+                            // choose direction somehow
+                            let s2d = Sample2D::new_random_sample();
+                            let frame = TangentFrame::from_normal(Vec3::from_raw(
+                                (*direction).0.replace(3, 0.0),
+                            ));
+                            let (r, phi) = (radius * s2d.x.sqrt(), s2d.y * std::f32::consts::TAU);
+                            let v = Vec3::Z + Vec3::new(r * phi.cos(), r * phi.sin(), 0.0);
+                            let v = frame.to_world(&v.normalized());
+                            if v.z() <= 0.0 {
+                                continue;
+                            }
+
+                            // construct ray
+                            let ray = Ray::new(Point3::new(x, y, z), v.normalized());
+                            attempts += 1;
+                            let result = lens_assembly.trace_forward(
+                                lens_zoom,
+                                &Input { ray, lambda },
+                                1.0,
+                                |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
+                            );
+                            if let Some(Output { .. }) = result {
+                                // handle getting through lens
+                                successes += 1;
+                                *direction = ray.direction;
+                                state = State::Growing;
+                            } else {
+                                // handle not getting through lens
+                                radius += 0.01 * heat_bias;
+                            }
+                        }
+                        State::Growing => {
+                            // println!("growing branch, radius = {}", radius);
+                            let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
+                            x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
+                            y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
+
+                            // choose direction somehow
+                            let s2d = Sample2D::new_random_sample();
+                            let frame = TangentFrame::from_normal(Vec3::from_raw(
+                                (*direction).0.replace(3, 0.0),
+                            ));
+                            let mut successful = false;
+                            for i in 0..10 {
+                                let phi = i as f32 / 10.0 * std::f32::consts::TAU;
+                                let v = Vec3::Z
+                                    + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
+                                let v = frame.to_world(&v.normalized());
+                                if v.z() <= 0.0 {
+                                    continue;
+                                }
+
+                                // construct ray
+                                let ray = Ray::new(Point3::new(x, y, z), v.normalized());
+                                attempts += 1;
+                                let result = lens_assembly.trace_forward(
+                                    lens_zoom,
+                                    &Input { ray, lambda },
+                                    1.0,
+                                    |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
+                                );
+                                if let Some(Output { .. }) = result {
+                                    successes += 1;
+                                    successful = true;
+                                    direction_accumulator += ray.direction;
+                                    // handle getting through lens
+                                } else {
+                                    // handle not getting through lens
+                                }
+                            }
+                            if successful {
+                                radius += heat_bias;
+                            } else {
+                                state = State::Shrinking;
+                                *direction = direction_accumulator.normalized();
+                            }
+                        }
+                        State::Shrinking => {
+                            // println!("shrinking branch, radius = {}", radius);
+                            let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
+                            x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
+                            y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
+
+                            // choose direction somehow
+                            // let s2d = Sample2D::new_random_sample();
+                            let frame = TangentFrame::from_normal(Vec3::from_raw(
+                                (*direction).0.replace(3, 0.0),
+                            ));
+                            let mut successful = false;
+                            let offset = random::<f32>() / 10.0;
+                            for i in 0..10 {
+                                let phi = (i as f32 / 10.0 + offset) * std::f32::consts::TAU;
+                                let v = Vec3::Z
+                                    + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
+                                let v = frame.to_world(&v.normalized());
+                                if v.z() <= 0.0 {
+                                    continue;
+                                }
+
+                                // construct ray
+                                let ray = Ray::new(Point3::new(x, y, z), v.normalized());
+
+                                attempts += 1;
+                                let result = lens_assembly.trace_forward(
+                                    lens_zoom,
+                                    &Input { ray, lambda },
+                                    1.0,
+                                    |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
+                                );
+                                if let Some(Output { .. }) = result {
+                                    successes += 1;
+                                    successful = true;
+                                    // handle getting through lens
+                                } else {
+                                    // handle not getting through lens
+                                }
+                            }
+                            if successful {
+                                break;
+                            } else {
+                                radius -= 0.01 * heat_bias;
+                                if radius < 0.0 {
+                                    state = State::Searching;
+                                }
+                            }
+                        }
+                    }
+                }
+                direction.0 = direction.0.replace(3, radius);
+                for _ in 0..samples_per_iteration {
+                    let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
+                    x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
+                    y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
+
+                    // choose direction somehow
                     let s2d = Sample2D::new_random_sample();
                     let frame =
                         TangentFrame::from_normal(Vec3::from_raw((*direction).0.replace(3, 0.0)));
-                    let mut v = random_cosine_direction(s2d);
-                    v += Vec3::Z * heat;
-                    let mut v = frame.to_world(&v.normalized());
-                    if v.z() <= 0.0 {
-                        v += Vec3::Z * (v.z().abs() + 0.01);
-                    }
-                    assert!(v.z() > 0.0, "v {:?}", v);
+
+                    let phi = i as f32 / 10.0 * std::f32::consts::TAU;
+                    let r = s2d.x.sqrt() * radius;
+                    let v = Vec3::Z + Vec3::new(r * phi.cos(), r * phi.sin(), 0.0);
+                    let v = frame.to_world(&v.normalized());
+
                     let ray = Ray::new(Point3::new(x, y, z), v.normalized());
 
-                    let mut energy = 0.0f32;
-
-                    attempts += 1;
+                    // do actual tracing through lens for film sample
                     let result =
                         lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
                             (e.origin.x().hypot(e.origin.y()) > aperture_radius, false)
@@ -499,12 +661,6 @@ fn main() {
                         tau,
                     }) = result
                     {
-                        successes += 1;
-                        *direction = ray.direction;
-                        if heat < heat_cap {
-                            heat *= 1.0 + heat_bias;
-                            direction.0 = direction.0.replace(3, heat);
-                        }
                         let t = (wall_position - pupil_ray.origin.z()) / pupil_ray.direction.z();
                         let point_at_10 = pupil_ray.point_at_parameter(t);
                         let uv = (
@@ -512,31 +668,35 @@ fn main() {
                             (point_at_10.y().abs() / texture_scale) % 1.0,
                         );
 
-                        // // texture based
-                        // let m = textures[0].eval_at(lambda, uv);
-                        // // spot light based
-                        let m = if (uv.0 - 0.5).powi(2) + (uv.1 - 0.5).powi(2) < 0.002 {
-                            if pupil_ray.direction.z() > 0.999 {
-                                1.0
-                            } else {
-                                0.0
+                        match mode {
+                            // // texture based
+                            Mode::Texture => {
+                                let m = textures[0].eval_at(lambda, uv);
+                                let energy = tau * m * 3.0;
+                                *pixel += XYZColor::from_wavelength_and_energy(lambda, energy);
                             }
-                        } else {
-                            0.0
+                            // // spot light based
+                            Mode::PinLight => {
+                                let m = if (uv.0 - 0.5).powi(2) + (uv.1 - 0.5).powi(2) < 0.002 {
+                                    if pupil_ray.direction.z() > 0.999 {
+                                        1.0
+                                    } else {
+                                        0.0
+                                    }
+                                } else {
+                                    0.0
+                                };
+                                let energy = tau * m * 3.0;
+                                *pixel += XYZColor::from_wavelength_and_energy(lambda, energy);
+                            }
+                            Mode::Direction => {
+                                *pixel = XYZColor::new(
+                                    (1.0 + direction.x()) * (1.0 + direction.w()),
+                                    (1.0 + direction.y()) * (1.0 + direction.w()),
+                                    (1.0 + direction.z()) * (1.0 + direction.w()),
+                                );
+                            }
                         };
-
-                        energy += tau * m * 3.0;
-                        // *pixel = XYZColor::new(
-                        //     (1.0 + direction.x()) * (1.0 + direction.w()),
-                        //     (1.0 + direction.y()) * (1.0 + direction.w()),
-                        //     (1.0 + direction.z()) * (1.0 + direction.w()),
-                        // );
-                        *pixel += XYZColor::from_wavelength_and_energy(lambda, energy);
-                    } else {
-                        if heat > 0.1 {
-                            heat /= 1.1;
-                            direction.0 = direction.0.replace(3, heat);
-                        }
                     }
                 }
                 (successes, attempts)
