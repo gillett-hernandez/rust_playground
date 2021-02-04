@@ -544,34 +544,39 @@ fn main() {
                             y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
 
                             // choose direction somehow
-                            let s2d = Sample2D::new_random_sample();
+
                             let frame = TangentFrame::from_normal(Vec3::from_raw(
                                 (*direction).0.replace(3, 0.0),
                             ));
-                            let (r, phi) = (radius * s2d.x.sqrt(), s2d.y * std::f32::consts::TAU);
-                            let v = Vec3::Z + Vec3::new(r * phi.cos(), r * phi.sin(), 0.0);
-                            let v = frame.to_world(&v.normalized());
-                            if v.z() <= 0.0 {
-                                continue;
-                            }
 
-                            // construct ray
-                            let ray = Ray::new(Point3::new(x, y, z), v.normalized());
-                            attempts += 1;
-                            let result = lens_assembly.trace_forward(
-                                lens_zoom,
-                                &Input { ray, lambda },
-                                1.0,
-                                |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
-                            );
-                            if let Some(Output { .. }) = result {
-                                // handle getting through lens
-                                successes += 1;
-                                *direction = ray.direction;
-                                state = State::Growing;
-                            } else {
-                                // handle not getting through lens
-                                radius += 0.01 * heat_bias;
+                            let offset = random::<f32>() / 10.0;
+                            for i in 0..10 {
+                                let phi = (i as f32 / 10.0 + offset) * std::f32::consts::TAU;
+                                let v = Vec3::Z
+                                    + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
+                                let v = frame.to_world(&v.normalized());
+                                if v.z() <= 0.0 {
+                                    continue;
+                                }
+                                // construct ray
+                                let ray = Ray::new(Point3::new(x, y, z), v.normalized());
+                                attempts += 1;
+                                let result = lens_assembly.trace_forward(
+                                    lens_zoom,
+                                    &Input { ray, lambda },
+                                    1.0,
+                                    |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
+                                );
+                                if let Some(Output { .. }) = result {
+                                    // handle getting through lens
+                                    successes += 1;
+                                    *direction = ray.direction;
+                                    state = State::Growing;
+                                    break;
+                                } else {
+                                    // handle not getting through lens
+                                    radius += 0.01 * heat_bias;
+                                }
                             }
                         }
                         State::Growing => {

@@ -150,7 +150,7 @@ fn main() {
     let phi = random::<f32>() * std::f32::consts::TAU;
     let mag = random::<f32>() * 0.3 + 0.9;
     let particle = Particle::new(
-        3.5,
+        100.5,
         0.05,
         0.5,
         0.5,
