@@ -5,7 +5,7 @@ use lib::*;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Data, Sample, SampleFormat, StreamInstant};
-use crossbeam::unbounded;
+use crossbeam::channel::unbounded;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 use ordered_float::OrderedFloat;
 use packed_simd::f32x16;
