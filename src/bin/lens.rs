@@ -1,7 +1,10 @@
 #![feature(slice_fill)]
 extern crate minifb;
 
-use std::f32::consts::{SQRT_2, TAU};
+use std::f32::{
+    consts::{SQRT_2, TAU},
+    EPSILON,
+};
 
 use exr::block::chunk;
 use lens::*;
@@ -63,12 +66,13 @@ fn recalculate_and_cache_directions<F>(
     lens_assembly: &LensAssembly,
     lens_zoom: f32,
     aperture_callback: F,
-) -> Film<Vec3>
+    solver_heat: f32,
+) -> Film<f32x4>
 where
     F: Send + Sync + Fn(f32, Ray) -> bool,
 {
     // create film of vecs.
-    let mut film = Film::new(radius_bins, wavelength_bins, Vec3::Z);
+    let mut film = Film::new(radius_bins, wavelength_bins, f32x4::splat(0.0));
     let aperture_radius = lens_assembly.aperture_radius();
     film.buffer.par_iter_mut().enumerate().for_each(|(i, v)| {
         let radius_bin = i % radius_bins;
@@ -114,9 +118,8 @@ where
         let mut radius = 0.0;
         let mut sum_angle = 0.0;
         let mut valid_angle_count = 0;
-        let heat = 0.1;
         'outer: loop {
-            radius += heat;
+            radius += solver_heat;
             let mut ct = 0;
             for mult in vec![-1.0, 1.0] {
                 let old_angle = (-direction.x() / direction.z()).atan();
@@ -148,9 +151,8 @@ where
             }
         }
         let avg_angle = sum_angle / (valid_angle_count as f32);
-        direction = Vec3::new(-avg_angle.sin(), 0.0, avg_angle.cos());
-        direction.0 = direction.0.replace(3, (max_angle - min_angle).abs() / 2.0);
-        *v = direction;
+
+        *v = f32x4::new(avg_angle, (max_angle - min_angle).abs() / 2.0, 0.0, 0.0);
     });
     film
 }
@@ -177,7 +179,7 @@ fn main() {
     });
 
     let mut film = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, XYZColor::BLACK);
-    let mut buffer = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, 0u32);
+    let mut window_pixels = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, 0u32);
 
     // Limit to max ~144 fps update rate
     window.limit_update_rate(Some(std::time::Duration::from_micros(6944)));
@@ -274,7 +276,7 @@ fn main() {
 
     let original_aperture_radius = lens_assembly.aperture_radius();
     let mut aperture_radius = original_aperture_radius / 2.0;
-    let mut heat_bias = 0.1;
+    let mut heat_bias = 0.01;
     let mut heat_cap = 10.0;
     let mut lens_zoom = 0.0;
     let mut film_position = -lens_assembly.total_thickness_at(lens_zoom);
@@ -348,6 +350,7 @@ fn main() {
         &lens_assembly,
         lens_zoom,
         |aperture_radius, ray| bladed_aperture(aperture_radius, 6, ray),
+        heat_bias,
     );
 
     let mut last_pressed_hotkey = Key::A;
@@ -359,7 +362,7 @@ fn main() {
     let mut mode = Mode::PinLight;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let mut clear = false;
+        let mut clear_film = false;
         let mut clear_direction_cache = false;
         let keys = window.get_keys_pressed(KeyRepeat::No);
 
@@ -443,6 +446,8 @@ fn main() {
                 Key::A => {
                     // aperture
                     aperture_radius *= 1.1;
+                    heat_bias *= 1.1;
+                    clear_direction_cache = true;
                     println!(
                         "{:?}, f stop = {:?}",
                         aperture_radius,
@@ -451,7 +456,7 @@ fn main() {
                 }
                 Key::F => {
                     // Film
-                    clear = true;
+                    clear_film = true;
                     clear_direction_cache = true;
                     total_samples = 0;
                     println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
@@ -465,8 +470,7 @@ fn main() {
                 Key::W => {
                     // Wall
 
-                    clear = true;
-                    clear_direction_cache = true;
+                    clear_film = true;
                     total_samples = 0;
                     wall_position += 10.0;
                     println!("{:?}", wall_position);
@@ -478,7 +482,7 @@ fn main() {
                     println!("{:?}", heat_bias);
                 }
                 Key::R => {
-                    // Heat
+                    // wavelength sweep
                     wavelength_sweep_speed *= 1.1;
                     println!("{:?}", wavelength_sweep_speed);
                 }
@@ -493,7 +497,7 @@ fn main() {
                     println!("{:?}", texture_scale);
                 }
                 Key::Z => {
-                    clear = true;
+                    clear_film = true;
                     clear_direction_cache = true;
                     total_samples = 0;
                     lens_zoom += 0.01;
@@ -504,7 +508,7 @@ fn main() {
                     println!("{:?}", samples_per_iteration);
                 }
                 Key::E => {
-                    clear = true;
+                    clear_film = true;
                     clear_direction_cache = true;
                     total_samples = 0;
                     println!("{:?}", sensor_size);
@@ -518,6 +522,8 @@ fn main() {
                 Key::A => {
                     // aperture
                     aperture_radius /= 1.1;
+                    heat_bias /= 1.1;
+                    clear_direction_cache = true;
                     println!(
                         "{:?}, f stop = {:?}",
                         aperture_radius,
@@ -526,7 +532,7 @@ fn main() {
                 }
                 Key::F => {
                     // Film
-                    clear = true;
+                    clear_film = true;
                     clear_direction_cache = true;
                     total_samples = 0;
                     println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
@@ -540,8 +546,7 @@ fn main() {
                 Key::W => {
                     // Wall
 
-                    clear = true;
-                    clear_direction_cache = true;
+                    clear_film = true;
                     total_samples = 0;
                     wall_position -= 10.0;
                     println!("{:?}", wall_position);
@@ -554,7 +559,7 @@ fn main() {
                     println!("{:?}", heat_bias);
                 }
                 Key::R => {
-                    // Heat
+                    // wavelength sweep
                     wavelength_sweep_speed /= 1.1;
                     println!("{:?}", wavelength_sweep_speed);
                 }
@@ -570,7 +575,7 @@ fn main() {
                 }
                 Key::Z => {
                     // Zoom
-                    clear = true;
+                    clear_film = true;
                     clear_direction_cache = true;
                     total_samples = 0;
                     lens_zoom -= 0.01;
@@ -583,7 +588,7 @@ fn main() {
                     println!("{:?}", samples_per_iteration);
                 }
                 Key::E => {
-                    clear = true;
+                    clear_film = true;
                     clear_direction_cache = true;
                     total_samples = 0;
                     println!("{:?}", sensor_size);
@@ -593,7 +598,8 @@ fn main() {
             }
         }
         if window.is_key_pressed(Key::Space, KeyRepeat::Yes) {
-            clear = true;
+            clear_film = true;
+            clear_direction_cache = true;
             wavelength_sweep = 0.0;
             total_samples = 0;
         }
@@ -603,7 +609,7 @@ fn main() {
             println!("sampling efficiency is {}", efficiency);
         }
         if window.is_key_pressed(Key::B, KeyRepeat::No) {
-            clear_direction_cache = true;
+            clear_film = true;
         }
         if window.is_key_pressed(Key::M, KeyRepeat::No) {
             // do mode transition
@@ -613,7 +619,7 @@ fn main() {
                 Mode::Direction => Mode::Texture,
             };
         }
-        if clear {
+        if clear_film {
             film.buffer
                 .par_iter_mut()
                 .for_each(|e| *e = XYZColor::BLACK)
@@ -628,6 +634,7 @@ fn main() {
                 &lens_assembly,
                 lens_zoom,
                 |aperture_radius, ray| bladed_aperture(aperture_radius, 6, ray),
+                heat_bias,
             )
         }
 
@@ -705,28 +712,69 @@ fn main() {
                     ((py as f32 + 0.5) / height as f32 - 0.5) * sensor_size,
                     film_position,
                 );
-                let film_radius = central_point.x().hypot(central_point.y());
-                let mut direction = direction_cache_film.at_uv((
-                    film_radius / (SQRT_2 * sensor_size / 2.0),
-                    (lambda - wavelength_bounds.lower) / wavelength_bounds.span(),
-                ));
-                // direction is pointing towards the center somewhat and assumes direction.y() == 0.0
-                // thus rotate to match actual central point of ray.
-
-                let rotation_angle = central_point.y().atan2(central_point.x());
-                let [dx, _, dz, w]: [f32; 4] = direction.0.into();
-                direction = Vec3::from_raw(f32x4::new(
-                    dx * rotation_angle.cos(),
-                    dx * rotation_angle.sin(),
-                    dz,
-                    w,
-                ));
-                let radius = w * 1.1;
-
                 for _ in 0..samples_per_iteration {
                     let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
                     x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
                     y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
+
+                    let rotation_angle = y.atan2(x);
+
+                    let film_radius = y.hypot(x);
+
+                    let u = film_radius / (SQRT_2 * sensor_size / 2.0);
+                    let v = ((lambda - wavelength_bounds.lower) / wavelength_bounds.span())
+                        .clamp(0.0, 1.0 - EPSILON);
+                    debug_assert!(u < 1.0 && v < 1.0, "{}, {}", u, v);
+                    let d_x_idx = (u * direction_cache_radius_bins as f32) as usize;
+                    let d_y_idx = (v * direction_cache_wavelength_bins as f32) as usize;
+                    let angles00 = direction_cache_film.at(d_x_idx, d_y_idx);
+                    let angles01 = if d_y_idx + 1 < direction_cache_wavelength_bins {
+                        direction_cache_film.at(d_x_idx, d_y_idx + 1)
+                    } else {
+                        angles00
+                    };
+                    let angles10 = if d_x_idx + 1 < direction_cache_radius_bins {
+                        direction_cache_film.at(d_x_idx + 1, d_y_idx)
+                    } else {
+                        angles00
+                    };
+                    let angles11 = if d_x_idx + 1 < direction_cache_radius_bins
+                        && d_y_idx + 1 < direction_cache_wavelength_bins
+                    {
+                        direction_cache_film.at(d_x_idx + 1, d_y_idx + 1)
+                    } else {
+                        angles00
+                    };
+                    // do bilinear interpolation?
+                    let (du, dv) = (
+                        u - d_x_idx as f32 / direction_cache_radius_bins as f32,
+                        u - d_y_idx as f32 / direction_cache_wavelength_bins as f32,
+                    );
+
+                    // let (phi, dphi) = (angles00.extract(0), angles00.extract(1));
+                    // let [phi, dphi, _, _]: [f32; 4] = direction_cache_film.at_uv((u, v)).into();
+                    let (phi, dphi) = (
+                        (1.0 - du) * (1.0 - dv) * angles00.extract(0)
+                            + du * (1.0 - dv) * angles01.extract(0)
+                            + dv * (1.0 - du) * angles10.extract(0)
+                            + du * dv * angles11.extract(0),
+                        (1.0 - du) * (1.0 - dv) * angles00.extract(1)
+                            + du * (1.0 - dv) * angles01.extract(1)
+                            + dv * (1.0 - du) * angles10.extract(1)
+                            + du * dv * angles11.extract(1),
+                    );
+
+                    // direction is pointing towards the center somewhat and assumes direction.y() == 0.0
+                    // thus rotate to match actual central point of ray.
+
+                    let dx = -phi.sin();
+                    let direction = Vec3::from_raw(f32x4::new(
+                        dx * rotation_angle.cos(),
+                        dx * rotation_angle.sin(),
+                        phi.cos(),
+                        0.0,
+                    ));
+                    let radius = dphi * 1.1;
 
                     // choose direction somehow
                     let s2d = Sample2D::new_random_sample();
@@ -796,7 +844,7 @@ fn main() {
             .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
         efficiency = (1.0 - efficiency_heat) * efficiency + efficiency_heat * (a as f32 / b as f32);
 
-        buffer
+        window_pixels
             .buffer
             .par_iter_mut()
             .enumerate()
@@ -808,7 +856,7 @@ fn main() {
                 *v = rgb_to_u32((255.0 * r) as u8, (255.0 * g) as u8, (255.0 * b) as u8);
             });
         window
-            .update_with_buffer(&buffer.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
+            .update_with_buffer(&window_pixels.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
             .unwrap();
     }
 }

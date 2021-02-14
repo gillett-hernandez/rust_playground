@@ -1,3 +1,5 @@
+use std::f32::EPSILON;
+
 // use std::vec::Vec;
 #[derive(Clone)]
 pub struct Film<T> {
@@ -25,8 +27,8 @@ impl<T: Copy> Film<T> {
     }
     pub fn at_uv(&self, mut uv: (f32, f32)) -> T {
         // debug_assert!(uv.0 < 1.0 && uv.1 < 1.0 && uv.0 >= 0.0 && uv.1 >= 0.0);
-        uv.0 = uv.0.clamp(0.0, 0.999999);
-        uv.1 = uv.1.clamp(0.0, 0.999999);
+        uv.0 = uv.0.clamp(0.0, 1.0 - EPSILON);
+        uv.1 = uv.1.clamp(0.0, 1.0 - EPSILON);
         self.at(
             (uv.0 * (self.width as f32)) as usize,
             (uv.1 * (self.height as f32)) as usize,
