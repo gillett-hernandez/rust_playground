@@ -25,6 +25,7 @@ enum Mode {
     Direction,
 }
 
+#[derive(Copy, Clone, Debug)]
 enum State {
     Searching,
     Growing,
@@ -61,7 +62,7 @@ const WINDOW_HEIGHT: usize = 800;
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(23 as usize)
+        .num_threads(22 as usize)
         .build_global()
         .unwrap();
     let mut window = Window::new(
@@ -201,7 +202,168 @@ fn main() {
     let mut wavelength_sweep_speed = 0.001;
     let mut texture_scale = 10.0;
     let mut efficiency = 0.0;
+    let efficiency_heat = 0.99;
     let mut mode = Mode::Texture;
+
+    if false {
+        let mut direction = Vec3::Z;
+        let i = 100;
+        let lambda = 500.0;
+
+        let px = i % width;
+        let py = i / width;
+
+        let mut radius = direction.w();
+        let (mut successes, mut attempts) = (0, 0);
+
+        let central_point = Point3::new(
+            ((px as f32 + 0.5) / width as f32 - 0.5) * sensor_size,
+            ((py as f32 + 0.5) / height as f32 - 0.5) * sensor_size,
+            film_position,
+        );
+        let mut direction_accumulator = Vec3::ZERO;
+
+        let mut state = State::Searching;
+
+        loop {
+            match state {
+                State::Searching => {
+                    println!("searching branch, radius = {}", radius);
+                    let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
+                    x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
+                    y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
+
+                    // choose direction somehow
+
+                    let frame =
+                        TangentFrame::from_normal(Vec3::from_raw((direction).0.replace(3, 0.0)));
+
+                    let offset = random::<f32>() / 10.0;
+                    for i in 0..10 {
+                        let phi = (i as f32 / 10.0 + offset) * std::f32::consts::TAU;
+                        let v = Vec3::Z + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
+                        let v = frame.to_world(&v.normalized());
+                        if v.z() <= 0.0 {
+                            continue;
+                        }
+                        // construct ray
+                        let ray = Ray::new(Point3::new(x, y, z), v.normalized());
+                        attempts += 1;
+                        let result = lens_assembly.trace_forward(
+                            lens_zoom,
+                            &Input { ray, lambda },
+                            1.0,
+                            |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
+                        );
+                        if let Some(Output { .. }) = result {
+                            // handle getting through lens
+                            successes += 1;
+                            direction = ray.direction;
+                            state = State::Growing;
+                            break;
+                        } else {
+                            // handle not getting through lens
+                            radius += 0.01 * heat_bias;
+                        }
+                    }
+                }
+                State::Growing => {
+                    println!("growing branch, radius = {}", radius);
+                    let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
+                    x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
+                    y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
+
+                    // choose direction somehow
+                    let s2d = Sample2D::new_random_sample();
+                    let frame =
+                        TangentFrame::from_normal(Vec3::from_raw((direction).0.replace(3, 0.0)));
+                    let mut successful = false;
+                    for i in 0..10 {
+                        let phi = i as f32 / 10.0 * std::f32::consts::TAU;
+                        let v = Vec3::Z + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
+                        let v = frame.to_world(&v.normalized());
+                        if v.z() <= 0.0 {
+                            continue;
+                        }
+
+                        // construct ray
+                        let ray = Ray::new(Point3::new(x, y, z), v.normalized());
+                        attempts += 1;
+                        let result = lens_assembly.trace_forward(
+                            lens_zoom,
+                            &Input { ray, lambda },
+                            1.0,
+                            |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
+                        );
+                        if let Some(Output { .. }) = result {
+                            successes += 1;
+                            successful = true;
+                            direction_accumulator += ray.direction;
+                            // handle getting through lens
+                        } else {
+                            // handle not getting through lens
+                        }
+                    }
+                    if successful {
+                        radius += heat_bias;
+                    } else {
+                        state = State::Shrinking;
+                        direction = direction_accumulator.normalized();
+                    }
+                }
+                State::Shrinking => {
+                    println!("shrinking branch, radius = {}", radius);
+                    let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
+                    x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
+                    y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
+
+                    // choose direction somehow
+                    // let s2d = Sample2D::new_random_sample();
+                    let frame =
+                        TangentFrame::from_normal(Vec3::from_raw((direction).0.replace(3, 0.0)));
+                    let mut successful = false;
+                    let offset = random::<f32>() / 10.0;
+                    for i in 0..10 {
+                        let phi = (i as f32 / 10.0 + offset) * std::f32::consts::TAU;
+                        let v = Vec3::Z + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
+                        let v = frame.to_world(&v.normalized());
+                        if v.z() <= 0.0 {
+                            continue;
+                        }
+
+                        // construct ray
+                        let ray = Ray::new(Point3::new(x, y, z), v.normalized());
+
+                        attempts += 1;
+                        let result = lens_assembly.trace_forward(
+                            lens_zoom,
+                            &Input { ray, lambda },
+                            1.0,
+                            |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
+                        );
+                        if let Some(Output { .. }) = result {
+                            successes += 1;
+                            successful = true;
+                            // handle getting through lens
+                        } else {
+                            // handle not getting through lens
+                        }
+                    }
+                    if successful {
+                        break;
+                    } else {
+                        radius -= 0.01 * heat_bias;
+                        if radius < 0.0 {
+                            state = State::Searching;
+                        }
+                    }
+                }
+            }
+        }
+        println!("{:?}, {:?}", direction, radius);
+        return;
+    }
+
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let keys = window.get_keys_pressed(KeyRepeat::No);
 
@@ -531,151 +693,9 @@ fn main() {
                     ((py as f32 + 0.5) / height as f32 - 0.5) * sensor_size,
                     film_position,
                 );
-                let mut direction_accumulator = Vec3::ZERO;
 
-                let mut state = State::Searching;
+                // try and find better direction and radius for sampling.
 
-                loop {
-                    match state {
-                        State::Searching => {
-                            // println!("searching branch, radius = {}", radius);
-                            let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
-                            x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
-                            y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
-
-                            // choose direction somehow
-
-                            let frame = TangentFrame::from_normal(Vec3::from_raw(
-                                (*direction).0.replace(3, 0.0),
-                            ));
-
-                            let offset = random::<f32>() / 10.0;
-                            for i in 0..10 {
-                                let phi = (i as f32 / 10.0 + offset) * std::f32::consts::TAU;
-                                let v = Vec3::Z
-                                    + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
-                                let v = frame.to_world(&v.normalized());
-                                if v.z() <= 0.0 {
-                                    continue;
-                                }
-                                // construct ray
-                                let ray = Ray::new(Point3::new(x, y, z), v.normalized());
-                                attempts += 1;
-                                let result = lens_assembly.trace_forward(
-                                    lens_zoom,
-                                    &Input { ray, lambda },
-                                    1.0,
-                                    |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
-                                );
-                                if let Some(Output { .. }) = result {
-                                    // handle getting through lens
-                                    successes += 1;
-                                    *direction = ray.direction;
-                                    state = State::Growing;
-                                    break;
-                                } else {
-                                    // handle not getting through lens
-                                    radius += 0.01 * heat_bias;
-                                }
-                            }
-                        }
-                        State::Growing => {
-                            // println!("growing branch, radius = {}", radius);
-                            let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
-                            x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
-                            y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
-
-                            // choose direction somehow
-                            let s2d = Sample2D::new_random_sample();
-                            let frame = TangentFrame::from_normal(Vec3::from_raw(
-                                (*direction).0.replace(3, 0.0),
-                            ));
-                            let mut successful = false;
-                            for i in 0..10 {
-                                let phi = i as f32 / 10.0 * std::f32::consts::TAU;
-                                let v = Vec3::Z
-                                    + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
-                                let v = frame.to_world(&v.normalized());
-                                if v.z() <= 0.0 {
-                                    continue;
-                                }
-
-                                // construct ray
-                                let ray = Ray::new(Point3::new(x, y, z), v.normalized());
-                                attempts += 1;
-                                let result = lens_assembly.trace_forward(
-                                    lens_zoom,
-                                    &Input { ray, lambda },
-                                    1.0,
-                                    |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
-                                );
-                                if let Some(Output { .. }) = result {
-                                    successes += 1;
-                                    successful = true;
-                                    direction_accumulator += ray.direction;
-                                    // handle getting through lens
-                                } else {
-                                    // handle not getting through lens
-                                }
-                            }
-                            if successful {
-                                radius += heat_bias;
-                            } else {
-                                state = State::Shrinking;
-                                *direction = direction_accumulator.normalized();
-                            }
-                        }
-                        State::Shrinking => {
-                            // println!("shrinking branch, radius = {}", radius);
-                            let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
-                            x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
-                            y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
-
-                            // choose direction somehow
-                            // let s2d = Sample2D::new_random_sample();
-                            let frame = TangentFrame::from_normal(Vec3::from_raw(
-                                (*direction).0.replace(3, 0.0),
-                            ));
-                            let mut successful = false;
-                            let offset = random::<f32>() / 10.0;
-                            for i in 0..10 {
-                                let phi = (i as f32 / 10.0 + offset) * std::f32::consts::TAU;
-                                let v = Vec3::Z
-                                    + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
-                                let v = frame.to_world(&v.normalized());
-                                if v.z() <= 0.0 {
-                                    continue;
-                                }
-
-                                // construct ray
-                                let ray = Ray::new(Point3::new(x, y, z), v.normalized());
-
-                                attempts += 1;
-                                let result = lens_assembly.trace_forward(
-                                    lens_zoom,
-                                    &Input { ray, lambda },
-                                    1.0,
-                                    |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
-                                );
-                                if let Some(Output { .. }) = result {
-                                    successes += 1;
-                                    successful = true;
-                                    // handle getting through lens
-                                } else {
-                                    // handle not getting through lens
-                                }
-                            }
-                            if successful {
-                                break;
-                            } else {
-                                radius -= 0.01 * heat_bias;
-                                if radius < 0.0 {
-                                    state = State::Searching;
-                                }
-                            }
-                        }
-                    }
-                }
                 direction.0 = direction.0.replace(3, radius);
                 for _ in 0..samples_per_iteration {
                     let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
@@ -745,7 +765,7 @@ fn main() {
                 (successes, attempts)
             })
             .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
-        efficiency = 0.1 * efficiency + 0.9 * (a as f32 / b as f32);
+        efficiency = (1.0 - efficiency_heat) * efficiency + efficiency_heat * (a as f32 / b as f32);
 
         buffer
             .buffer
