@@ -118,6 +118,8 @@ where
         let mut radius = 0.0;
         let mut sum_angle = 0.0;
         let mut valid_angle_count = 0;
+
+        // maybe rewrite this as tree search?
         'outer: loop {
             radius += solver_heat;
             let mut ct = 0;
@@ -774,7 +776,7 @@ fn main() {
                         phi.cos(),
                         0.0,
                     ));
-                    let radius = dphi * 1.1;
+                    let radius = dphi * 1.01;
 
                     // choose direction somehow
                     let s2d = Sample2D::new_random_sample();
