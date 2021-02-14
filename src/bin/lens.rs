@@ -1,7 +1,7 @@
 #![feature(slice_fill)]
 extern crate minifb;
 
-use std::f32::consts::SQRT_2;
+use std::f32::consts::{SQRT_2, TAU};
 
 use exr::block::chunk;
 use lens::*;
@@ -28,13 +28,6 @@ enum Mode {
     Direction,
 }
 
-#[derive(Copy, Clone, Debug)]
-enum State {
-    Searching,
-    Growing,
-    Shrinking,
-}
-
 fn circular_aperture(aperture_radius: f32, ray: Ray) -> bool {
     ray.origin.x().hypot(ray.origin.y()) > aperture_radius
 }
@@ -42,15 +35,15 @@ fn circular_aperture(aperture_radius: f32, ray: Ray) -> bool {
 fn bladed_aperture(aperture_radius: f32, blades: usize, ray: Ray) -> bool {
     match blades {
         6 => {
-            let phi = std::f32::consts::PI / 6.0;
+            let phi = std::f32::consts::PI / 3.0;
             let top = Vec3::new(phi.cos(), phi.sin(), 0.0);
             let bottom = Vec3::new(phi.cos(), -phi.sin(), 0.0);
             let mut point = Vec3::from(ray.origin);
             point.0 = point.0.replace(2, 0.0);
-            point = point.normalized();
+            // point = point.normalized();
             let cos_top = point * top;
             let cos_bottom = point * bottom;
-            let cos_apex = point.z();
+            let cos_apex = point.x();
             let minimum = ((1.0 + cos_top.abs().powf(0.5)) / cos_top.abs())
                 .min((1.0 + cos_bottom.abs().powf(0.5)) / cos_bottom.abs())
                 .min((1.0 + cos_apex.abs().powf(0.5)) / cos_apex.abs());
@@ -156,7 +149,7 @@ where
         }
         let avg_angle = sum_angle / (valid_angle_count as f32);
         direction = Vec3::new(-avg_angle.sin(), 0.0, avg_angle.cos());
-        direction.0 = direction.0.replace(3, (max_angle - min_angle) / 2.0);
+        direction.0 = direction.0.replace(3, (max_angle - min_angle).abs() / 2.0);
         *v = direction;
     });
     film
@@ -201,7 +194,7 @@ fn main() {
     // let spec = "42.97		9.8			LAK9	1.6910	54.8	19.2
     // -115.33		2.1			LLF7	1.5486  45.4	19.2
     // 306.84		4.16		air			           	19.2
-    // 100000		4.0			IRIS			      	15
+    // 100000		4.0			iris			      	15
     // -59.06		1.87		SF7		1.6398  34.6   	17.3
     // 40.93		10.64		air		       			17.3
     // 183.92		7.05		LAK9	1.6910  54.8   	16.5
@@ -221,7 +214,7 @@ fn main() {
     // 58.04		22.95				LAK9		1.691	54.7	41
     // 2551		2.58				SF5			1.673	32.2	41
     // 32.39		15.66				air							27
-    // 10000		15.00				IRIS						25.5
+    // 10000		15.00				iris						25.5
     // -40.42		2.74				SF15		1.699	30.1	25
     // 192.98		27.92				SK16		1.62	60.3	36
     // -55.53		0.23				air							36
@@ -233,42 +226,42 @@ fn main() {
     // -62.03   4.20  N-SF10 1.5 50 24.0
     // -1240.67 5.00  air           24.0
     // 100000  105.00  iris          20.0"; // lensbaby
-    // let spec = " 70.97  15.0 abbe 1.523 58.6  23
-    // -56.79   4.5 abbe 1.617 38.5  23
-    // 100000.0 24.0 air             23
-    // 100000.0 25.3 iris            18
-    // 119.91   3.8 abbe 1.649 33.8  15
-    // 40.87    0.9 air              15
-    // 46.87    7.4 abbe 1.697 56.1  15
-    // -282.05 56.5 air              15"; // petzval kodak
-    // let spec = "33.072		2.366				C3			1.518	59.0	8.9
-    // -53.387		0.077				air                 8.9
-    // 27.825		2.657				C3			1.518	59.0	8.4
-    // -35.934		1.025				LAF7		1.749	35.0	8.3
-    // 40.900		22.084				air							7.8
-    // 10000		1.794				FD110		1.785	25.7	4.7
-    // -16.775		0.641				TAFD5		1.835	43.0	4.6
-    // 27.153		8.607				air							4.5
-    // 10000       1.0                   iris                      4.8
-    // -120.75		1.035				CF6			1.517	52.2	4.8
-    // -12.105		4.705				air							4.8
-    // -9.386		0.641				TAF1		1.773	49.6	4.0
-    // -24.331		18.960				air							4.1"; // kreitzer telephoto
-    let spec = "96.15 7.00 abbe 1.64 58.1             50.0
-    53.85 17.38 air                       50.0
-    117.48 5.59 abbe 1.58904 53.2         45.0
-    69.93 52.45 air                       45.0
-    106.64 15.73 abbe 1.76684 46.2        25.0
-    -188.11 4.90 air                      25.0
-    -192.31 15.38 abbe 1.76684 27.5       25.0
-    -140.91 9.58 air                      25.0
-    100000 10.0 iris                      25.0
-    -65.04 16.22 abbe 1.7552 27.5         25.0
-    188.11 2.52 air                       25.0
-    -323.43 7.00 abbe 1.713 53.9          25.0
-    -65.39 0.18 air                       25.0
-    -8741.25 6.64 abbe 1.6583 57.3        30.0
-    -117.55 131.19 air                    30.0"; // wideangle 2
+    let spec = " 70.97  15.0 abbe 1.523 58.6  23
+                         -56.79   4.5 abbe 1.617 38.5  23
+                         100000.0 24.0 air             23
+                         100000.0 25.3 iris            18
+                         119.91   3.8 abbe 1.649 33.8  15
+                         40.87    0.9 air              15
+                         46.87    7.4 abbe 1.697 56.1  15
+                         -282.05 56.5 air              15"; // petzval kodak
+                                                            // let spec = "33.072		2.366				C3			1.518	59.0	8.9
+                                                            // -53.387		0.077				air                 8.9
+                                                            // 27.825		2.657				C3			1.518	59.0	8.4
+                                                            // -35.934		1.025				LAF7		1.749	35.0	8.3
+                                                            // 40.900		22.084				air							7.8
+                                                            // 10000		1.794				FD110		1.785	25.7	4.7
+                                                            // -16.775		0.641				TAFD5		1.835	43.0	4.6
+                                                            // 27.153		8.607				air							4.5
+                                                            // 10000       1.0                   iris                      4.8
+                                                            // -120.75		1.035				CF6			1.517	52.2	4.8
+                                                            // -12.105		4.705				air							4.8
+                                                            // -9.386		0.641				TAF1		1.773	49.6	4.0
+                                                            // -24.331		18.960				air							4.1"; // kreitzer telephoto
+                                                            // let spec = "96.15 7.00 abbe 1.64 58.1             50.0
+                                                            // 53.85 17.38 air                       50.0
+                                                            // 117.48 5.59 abbe 1.58904 53.2         45.0
+                                                            // 69.93 52.45 air                       45.0
+                                                            // 106.64 15.73 abbe 1.76684 46.2        25.0
+                                                            // -188.11 4.90 air                      25.0
+                                                            // -192.31 15.38 abbe 1.76684 27.5       25.0
+                                                            // -140.91 9.58 air                      25.0
+                                                            // 100000 10.0 iris                      25.0
+                                                            // -65.04 16.22 abbe 1.7552 27.5         25.0
+                                                            // 188.11 2.52 air                       25.0
+                                                            // -323.43 7.00 abbe 1.713 53.9          25.0
+                                                            // -65.39 0.18 air                       25.0
+                                                            // -8741.25 6.64 abbe 1.6583 57.3        30.0
+                                                            // -117.55 131.19 air                    30.0"; // wideangle 2
     let (lenses, last_ior, last_vno) = parse_lenses_from(spec);
     let lens_assembly = LensAssembly::new(&lenses);
 
@@ -294,10 +287,57 @@ fn main() {
     let mut variance: f32 = 0.0;
     let mut stddev: f32 = 0.0;
 
+    // while window.is_open() && !window.is_key_down(Key::Escape) {
+    //     let keys = window.get_keys_pressed(KeyRepeat::Yes);
+    //     for key in keys.unwrap_or(vec![]) {
+    //         match key {
+    //             Key::A => {
+    //                 aperture_radius /= 1.1;
+    //                 println!(
+    //                     "registered input A, aperture_size = {}, sensor_size = {}",
+    //                     aperture_radius, sensor_size
+    //                 );
+    //             }
+    //             Key::B => {
+    //                 aperture_radius *= 1.1;
+    //                 println!(
+    //                     "registered input B, aperture_size = {}, sensor_size = {}",
+    //                     aperture_radius, sensor_size
+    //                 );
+    //             }
+    //             _ => {}
+    //         }
+    //     }
+    //     buffer
+    //         .buffer
+    //         .par_iter_mut()
+    //         .enumerate()
+    //         .for_each(|(i, pixel)| {
+    //             let px = i % width;
+    //             let py = i / width;
+    //             let u = px as f32 / width as f32;
+    //             let v = py as f32 / height as f32;
+    //             let dummy_ray = Ray::new(
+    //                 Point3::new(sensor_size * (u - 0.5), sensor_size * (v - 0.5), 0.0),
+    //                 Vec3::Z,
+    //             );
+    //             let rejected = bladed_aperture(aperture_radius, 6, dummy_ray);
+    //             if !rejected {
+    //                 *pixel = rgb_to_u32(255, 255, 255);
+    //             } else {
+    //                 *pixel = 0u32;
+    //             }
+    //         });
+
+    //     window
+    //         .update_with_buffer(&buffer.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
+    //         .unwrap();
+    // }
+
     let wavelength_bounds = BOUNDED_VISIBLE_RANGE;
 
-    let direction_cache_radius_bins = 256;
-    let direction_cache_wavelength_bins = 256;
+    let direction_cache_radius_bins = 512;
+    let direction_cache_wavelength_bins = 512;
 
     let mut direction_cache_film = recalculate_and_cache_directions(
         SQRT_2 * sensor_size / 2.0, // diagonal.
@@ -316,7 +356,7 @@ fn main() {
     let mut texture_scale = 10.0;
     let mut efficiency = 0.0;
     let efficiency_heat = 0.99;
-    let mut mode = Mode::Texture;
+    let mut mode = Mode::PinLight;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut clear = false;
@@ -693,7 +733,7 @@ fn main() {
                     let frame =
                         TangentFrame::from_normal(Vec3::from_raw(direction.0.replace(3, 0.0)));
 
-                    let phi = i as f32 / 10.0 * std::f32::consts::TAU;
+                    let phi = random::<f32>() * TAU;
                     let r = s2d.x.sqrt() * radius;
                     let v = Vec3::Z + Vec3::new(r * phi.cos(), r * phi.sin(), 0.0);
                     let v = frame.to_world(&v.normalized());
@@ -728,12 +768,13 @@ fn main() {
                             }
                             // // spot light based
                             Mode::PinLight => {
-                                let m = if (uv.0 - 0.5).powi(2) + (uv.1 - 0.5).powi(2) < 0.002 {
-                                    if pupil_ray.direction.z() > 0.999 {
-                                        1.0
-                                    } else {
-                                        0.0
-                                    }
+                                let m = if (uv.0 - 0.5).powi(2) + (uv.1 - 0.5).powi(2) < 0.001 {
+                                    // if pupil_ray.direction.z() > 0.999 {
+                                    //     1.0
+                                    // } else {
+                                    //     0.0
+                                    // }
+                                    1.0
                                 } else {
                                     0.0
                                 };

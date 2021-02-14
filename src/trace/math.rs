@@ -356,8 +356,7 @@ impl From<[f32; 3]> for Vec3 {
 
 impl From<Point3> for Vec3 {
     fn from(p: Point3) -> Self {
-        // Vec3::new(p.x, p.y, p.z)
-        Vec3::from_raw(p.0.replace(3, 0.0))
+        Vec3::from_raw(p.0 * Vec3::MASK)
     }
 }
 
