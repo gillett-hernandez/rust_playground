@@ -1,6 +1,8 @@
 #![feature(slice_fill)]
 extern crate minifb;
 
+use std::f32::consts::SQRT_2;
+
 use exr::block::chunk;
 use lens::*;
 use lib::*;
@@ -8,6 +10,7 @@ use lib::*;
 use math::XYZColor;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 use ordered_float::OrderedFloat;
+use packed_simd::f32x4;
 use rand::prelude::*;
 use random::random_cosine_direction;
 use rayon::prelude::*;
@@ -55,6 +58,108 @@ fn bladed_aperture(aperture_radius: f32, blades: usize, ray: Ray) -> bool {
         }
         _ => circular_aperture(aperture_radius, ray),
     }
+}
+
+// the following function only works and applies to lens with radial symmetry
+fn recalculate_and_cache_directions<F>(
+    radius_cap: f32,
+    radius_bins: usize,
+    wavelength_bins: usize,
+    wavelength_bounds: Bounds1D,
+    film_position: f32,
+    lens_assembly: &LensAssembly,
+    lens_zoom: f32,
+    aperture_callback: F,
+) -> Film<Vec3>
+where
+    F: Send + Sync + Fn(f32, Ray) -> bool,
+{
+    // create film of vecs.
+    let mut film = Film::new(radius_bins, wavelength_bins, Vec3::Z);
+    let aperture_radius = lens_assembly.aperture_radius();
+    film.buffer.par_iter_mut().enumerate().for_each(|(i, v)| {
+        let radius_bin = i % radius_bins;
+        let wavelength_bin = i / radius_bins;
+        let lambda = wavelength_bin as f32 * wavelength_bounds.span() / wavelength_bins as f32
+            + wavelength_bounds.lower;
+        let radius = radius_cap * radius_bin as f32 / radius_bins as f32;
+        // find direction (with fixed y = 0) for sampling aperture and outer pupil, and find corresponding sampling "radius"
+
+        // switch flag to change from random to stratified.
+        let ray_origin = Point3::new(radius, 0.0, film_position);
+        let mut direction;
+        let mut state = 0;
+        loop {
+            // directions range from straight forward (0 degrees) to almost critical (90 degrees, tangent)
+            if true {
+                // random sampling along axis until direction is found.
+                let s = Sample1D::new_random_sample();
+                let angle = s.x * std::f32::consts::FRAC_PI_2 * 0.97;
+                direction = Vec3::new(-angle.sin(), 0.0, angle.cos());
+            } else {
+                // stratified sampling along axis until direction is found.
+                state += 1;
+                panic!();
+            }
+            let ray = Ray::new(ray_origin, direction);
+            let result = lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
+                (aperture_callback(aperture_radius, e), false)
+            });
+            if let Some(Output {
+                ray: pupil_ray,
+                tau,
+            }) = result
+            {
+                // found good direction, so break
+                break;
+            }
+        }
+        // expand around direction to find radius and correct centroid.
+        // measured in radians.
+        let mut min_angle: f32 = 0.0;
+        let mut max_angle: f32 = 0.0;
+        let mut radius = 0.0;
+        let mut sum_angle = 0.0;
+        let mut valid_angle_count = 0;
+        let heat = 0.1;
+        'outer: loop {
+            radius += heat;
+            let mut ct = 0;
+            for mult in vec![-1.0, 1.0] {
+                let old_angle = (-direction.x() / direction.z()).atan();
+                let new_angle = old_angle + radius * mult;
+                let new_direction = Vec3::new(-new_angle.sin(), 0.0, new_angle.cos());
+                let ray = Ray::new(ray_origin, new_direction);
+                let result =
+                    lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
+                        (aperture_callback(aperture_radius, e), false)
+                    });
+                if let Some(Output {
+                    ray: pupil_ray,
+                    tau,
+                }) = result
+                {
+                    // found good direction. keep expanding.
+                    max_angle = max_angle.max(new_angle);
+                    min_angle = min_angle.min(new_angle);
+                    sum_angle += new_angle;
+                    valid_angle_count += 1;
+                } else {
+                    // found bad direction with this mult. keep expanding until both sides are bad.
+                    ct += 1;
+                    if ct == 2 {
+                        // both sides are bad. break.
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        let avg_angle = sum_angle / (valid_angle_count as f32);
+        direction = Vec3::new(-avg_angle.sin(), 0.0, avg_angle.cos());
+        direction.0 = direction.0.replace(3, (max_angle - min_angle) / 2.0);
+        *v = direction;
+    });
+    film
 }
 
 const WINDOW_WIDTH: usize = 800;
@@ -188,14 +293,22 @@ fn main() {
     let mut focal_distance_vec: Vec<f32> = Vec::new();
     let mut variance: f32 = 0.0;
     let mut stddev: f32 = 0.0;
-    let clear = |film: &mut Film<XYZColor>| {
-        film.buffer
-            .par_iter_mut()
-            .for_each(|e| *e = XYZColor::BLACK)
-    };
-    let clear_direction_filter =
-        |film: &mut Film<Vec3>| film.buffer.par_iter_mut().for_each(|e| *e = Vec3::Z);
-    let mut direction_filter_film = Film::new(film.width, film.height, Vec3::Z);
+
+    let wavelength_bounds = BOUNDED_VISIBLE_RANGE;
+
+    let direction_cache_radius_bins = 256;
+    let direction_cache_wavelength_bins = 256;
+
+    let mut direction_cache_film = recalculate_and_cache_directions(
+        SQRT_2 * sensor_size / 2.0, // diagonal.
+        direction_cache_radius_bins,
+        direction_cache_wavelength_bins,
+        wavelength_bounds,
+        film_position,
+        &lens_assembly,
+        lens_zoom,
+        |aperture_radius, ray| bladed_aperture(aperture_radius, 6, ray),
+    );
 
     let mut last_pressed_hotkey = Key::A;
     let mut wavelength_sweep: f32 = 0.0;
@@ -205,166 +318,9 @@ fn main() {
     let efficiency_heat = 0.99;
     let mut mode = Mode::Texture;
 
-    if false {
-        let mut direction = Vec3::Z;
-        let i = 100;
-        let lambda = 500.0;
-
-        let px = i % width;
-        let py = i / width;
-
-        let mut radius = direction.w();
-        let (mut successes, mut attempts) = (0, 0);
-
-        let central_point = Point3::new(
-            ((px as f32 + 0.5) / width as f32 - 0.5) * sensor_size,
-            ((py as f32 + 0.5) / height as f32 - 0.5) * sensor_size,
-            film_position,
-        );
-        let mut direction_accumulator = Vec3::ZERO;
-
-        let mut state = State::Searching;
-
-        loop {
-            match state {
-                State::Searching => {
-                    println!("searching branch, radius = {}", radius);
-                    let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
-                    x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
-                    y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
-
-                    // choose direction somehow
-
-                    let frame =
-                        TangentFrame::from_normal(Vec3::from_raw((direction).0.replace(3, 0.0)));
-
-                    let offset = random::<f32>() / 10.0;
-                    for i in 0..10 {
-                        let phi = (i as f32 / 10.0 + offset) * std::f32::consts::TAU;
-                        let v = Vec3::Z + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
-                        let v = frame.to_world(&v.normalized());
-                        if v.z() <= 0.0 {
-                            continue;
-                        }
-                        // construct ray
-                        let ray = Ray::new(Point3::new(x, y, z), v.normalized());
-                        attempts += 1;
-                        let result = lens_assembly.trace_forward(
-                            lens_zoom,
-                            &Input { ray, lambda },
-                            1.0,
-                            |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
-                        );
-                        if let Some(Output { .. }) = result {
-                            // handle getting through lens
-                            successes += 1;
-                            direction = ray.direction;
-                            state = State::Growing;
-                            break;
-                        } else {
-                            // handle not getting through lens
-                            radius += 0.01 * heat_bias;
-                        }
-                    }
-                }
-                State::Growing => {
-                    println!("growing branch, radius = {}", radius);
-                    let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
-                    x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
-                    y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
-
-                    // choose direction somehow
-                    let s2d = Sample2D::new_random_sample();
-                    let frame =
-                        TangentFrame::from_normal(Vec3::from_raw((direction).0.replace(3, 0.0)));
-                    let mut successful = false;
-                    for i in 0..10 {
-                        let phi = i as f32 / 10.0 * std::f32::consts::TAU;
-                        let v = Vec3::Z + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
-                        let v = frame.to_world(&v.normalized());
-                        if v.z() <= 0.0 {
-                            continue;
-                        }
-
-                        // construct ray
-                        let ray = Ray::new(Point3::new(x, y, z), v.normalized());
-                        attempts += 1;
-                        let result = lens_assembly.trace_forward(
-                            lens_zoom,
-                            &Input { ray, lambda },
-                            1.0,
-                            |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
-                        );
-                        if let Some(Output { .. }) = result {
-                            successes += 1;
-                            successful = true;
-                            direction_accumulator += ray.direction;
-                            // handle getting through lens
-                        } else {
-                            // handle not getting through lens
-                        }
-                    }
-                    if successful {
-                        radius += heat_bias;
-                    } else {
-                        state = State::Shrinking;
-                        direction = direction_accumulator.normalized();
-                    }
-                }
-                State::Shrinking => {
-                    println!("shrinking branch, radius = {}", radius);
-                    let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
-                    x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
-                    y += (random::<f32>() - 0.5) / height as f32 * sensor_size;
-
-                    // choose direction somehow
-                    // let s2d = Sample2D::new_random_sample();
-                    let frame =
-                        TangentFrame::from_normal(Vec3::from_raw((direction).0.replace(3, 0.0)));
-                    let mut successful = false;
-                    let offset = random::<f32>() / 10.0;
-                    for i in 0..10 {
-                        let phi = (i as f32 / 10.0 + offset) * std::f32::consts::TAU;
-                        let v = Vec3::Z + Vec3::new(radius * phi.cos(), radius * phi.sin(), 0.0);
-                        let v = frame.to_world(&v.normalized());
-                        if v.z() <= 0.0 {
-                            continue;
-                        }
-
-                        // construct ray
-                        let ray = Ray::new(Point3::new(x, y, z), v.normalized());
-
-                        attempts += 1;
-                        let result = lens_assembly.trace_forward(
-                            lens_zoom,
-                            &Input { ray, lambda },
-                            1.0,
-                            |e| (e.origin.x().hypot(e.origin.y()) > aperture_radius, false),
-                        );
-                        if let Some(Output { .. }) = result {
-                            successes += 1;
-                            successful = true;
-                            // handle getting through lens
-                        } else {
-                            // handle not getting through lens
-                        }
-                    }
-                    if successful {
-                        break;
-                    } else {
-                        radius -= 0.01 * heat_bias;
-                        if radius < 0.0 {
-                            state = State::Searching;
-                        }
-                    }
-                }
-            }
-        }
-        println!("{:?}, {:?}", direction, radius);
-        return;
-    }
-
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        let mut clear = false;
+        let mut clear_direction_cache = false;
         let keys = window.get_keys_pressed(KeyRepeat::No);
 
         for key in keys.unwrap_or(vec![]) {
@@ -455,8 +411,8 @@ fn main() {
                 }
                 Key::F => {
                     // Film
-                    clear(&mut film);
-                    clear_direction_filter(&mut direction_filter_film);
+                    clear = true;
+                    clear_direction_cache = true;
                     total_samples = 0;
                     println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
                     film_position += 1.0;
@@ -469,8 +425,8 @@ fn main() {
                 Key::W => {
                     // Wall
 
-                    clear(&mut film);
-                    clear_direction_filter(&mut direction_filter_film);
+                    clear = true;
+                    clear_direction_cache = true;
                     total_samples = 0;
                     wall_position += 10.0;
                     println!("{:?}", wall_position);
@@ -497,8 +453,8 @@ fn main() {
                     println!("{:?}", texture_scale);
                 }
                 Key::Z => {
-                    clear(&mut film);
-                    clear_direction_filter(&mut direction_filter_film);
+                    clear = true;
+                    clear_direction_cache = true;
                     total_samples = 0;
                     lens_zoom += 0.01;
                     println!("{:?}", lens_zoom);
@@ -508,8 +464,8 @@ fn main() {
                     println!("{:?}", samples_per_iteration);
                 }
                 Key::E => {
-                    clear(&mut film);
-                    clear_direction_filter(&mut direction_filter_film);
+                    clear = true;
+                    clear_direction_cache = true;
                     total_samples = 0;
                     println!("{:?}", sensor_size);
                     sensor_size *= 1.1;
@@ -530,8 +486,8 @@ fn main() {
                 }
                 Key::F => {
                     // Film
-                    clear(&mut film);
-                    clear_direction_filter(&mut direction_filter_film);
+                    clear = true;
+                    clear_direction_cache = true;
                     total_samples = 0;
                     println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
                     film_position -= 1.0;
@@ -544,8 +500,8 @@ fn main() {
                 Key::W => {
                     // Wall
 
-                    clear(&mut film);
-                    clear_direction_filter(&mut direction_filter_film);
+                    clear = true;
+                    clear_direction_cache = true;
                     total_samples = 0;
                     wall_position -= 10.0;
                     println!("{:?}", wall_position);
@@ -574,8 +530,8 @@ fn main() {
                 }
                 Key::Z => {
                     // Zoom
-                    clear(&mut film);
-                    clear_direction_filter(&mut direction_filter_film);
+                    clear = true;
+                    clear_direction_cache = true;
                     total_samples = 0;
                     lens_zoom -= 0.01;
                     println!("{:?}", lens_zoom);
@@ -587,8 +543,8 @@ fn main() {
                     println!("{:?}", samples_per_iteration);
                 }
                 Key::E => {
-                    clear(&mut film);
-                    clear_direction_filter(&mut direction_filter_film);
+                    clear = true;
+                    clear_direction_cache = true;
                     total_samples = 0;
                     println!("{:?}", sensor_size);
                     sensor_size /= 1.1;
@@ -597,7 +553,7 @@ fn main() {
             }
         }
         if window.is_key_pressed(Key::Space, KeyRepeat::Yes) {
-            clear(&mut film);
+            clear = true;
             wavelength_sweep = 0.0;
             total_samples = 0;
         }
@@ -607,7 +563,7 @@ fn main() {
             println!("sampling efficiency is {}", efficiency);
         }
         if window.is_key_pressed(Key::B, KeyRepeat::No) {
-            clear_direction_filter(&mut direction_filter_film);
+            clear_direction_cache = true;
         }
         if window.is_key_pressed(Key::M, KeyRepeat::No) {
             // do mode transition
@@ -617,86 +573,116 @@ fn main() {
                 Mode::Direction => Mode::Texture,
             };
         }
+        if clear {
+            film.buffer
+                .par_iter_mut()
+                .for_each(|e| *e = XYZColor::BLACK)
+        }
+        if clear_direction_cache {
+            direction_cache_film = recalculate_and_cache_directions(
+                SQRT_2 * sensor_size / 2.0, // diagonal.
+                direction_cache_radius_bins,
+                direction_cache_wavelength_bins,
+                wavelength_bounds,
+                film_position,
+                &lens_assembly,
+                lens_zoom,
+                |aperture_radius, ray| bladed_aperture(aperture_radius, 6, ray),
+            )
+        }
 
         let srgb_tonemapper = sRGB::new(&film, 1.0);
 
-        let wavelength_bounds = BOUNDED_VISIBLE_RANGE;
-
         // autofocus:
-        let n = 25;
-        let origin = Point3::new(0.0, 0.0, film_position);
-        let direction = Point3::new(
-            0.0,
-            lens_assembly.lenses.last().unwrap().housing_radius,
-            0.0,
-        ) - origin;
-        let maximum_angle = -(direction.y() / direction.z()).atan();
+        {
+            let n = 25;
+            let origin = Point3::new(0.0, 0.0, film_position);
+            let direction = Point3::new(
+                0.0,
+                lens_assembly.lenses.last().unwrap().housing_radius,
+                0.0,
+            ) - origin;
+            let maximum_angle = -(direction.y() / direction.z()).atan();
 
-        focal_distance_vec.clear();
-        for i in 0..n {
-            // choose angle to shoot ray from (0.0, 0.0, wall_position)
-            let angle = ((i as f32 + 0.5) / n as f32) * maximum_angle;
-            let ray = Ray::new(origin, Vec3::new(0.0, angle.sin(), angle.cos()));
-            // println!("{:?}", ray);
-            for w in 0..10 {
-                let lambda = wavelength_bounds.lower + (w as f32 / 10.0) * wavelength_bounds.span();
-                let result =
-                    lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
-                        (bladed_aperture(aperture_radius, 6, e), false)
-                    });
-                if let Some(Output {
-                    ray: pupil_ray,
-                    tau,
-                }) = result
-                {
-                    let dt = (-pupil_ray.origin.y()) / pupil_ray.direction.y();
-                    let point = pupil_ray.point_at_parameter(dt);
-                    // println!("{:?}", point);
+            focal_distance_vec.clear();
+            for i in 0..n {
+                // choose angle to shoot ray from (0.0, 0.0, wall_position)
+                let angle = ((i as f32 + 0.5) / n as f32) * maximum_angle;
+                let ray = Ray::new(origin, Vec3::new(0.0, angle.sin(), angle.cos()));
+                // println!("{:?}", ray);
+                for w in 0..10 {
+                    let lambda =
+                        wavelength_bounds.lower + (w as f32 / 10.0) * wavelength_bounds.span();
+                    let result =
+                        lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
+                            (bladed_aperture(aperture_radius, 6, e), false)
+                        });
+                    if let Some(Output {
+                        ray: pupil_ray,
+                        tau,
+                    }) = result
+                    {
+                        let dt = (-pupil_ray.origin.y()) / pupil_ray.direction.y();
+                        let point = pupil_ray.point_at_parameter(dt);
+                        // println!("{:?}", point);
 
-                    if point.z().is_finite() {
-                        focal_distance_vec.push(point.z());
+                        if point.z().is_finite() {
+                            focal_distance_vec.push(point.z());
+                        }
                     }
                 }
             }
-        }
-        if focal_distance_vec.len() > 0 {
-            let avg: f32 = focal_distance_vec.iter().sum::<f32>() / focal_distance_vec.len() as f32;
-            focal_distance_suggestion = Some(avg);
-            variance = focal_distance_vec
-                .iter()
-                .map(|e| (avg - *e).powf(2.0))
-                .sum::<f32>()
-                / focal_distance_vec.len() as f32;
-            stddev = variance.sqrt();
+            if focal_distance_vec.len() > 0 {
+                let avg: f32 =
+                    focal_distance_vec.iter().sum::<f32>() / focal_distance_vec.len() as f32;
+                focal_distance_suggestion = Some(avg);
+                variance = focal_distance_vec
+                    .iter()
+                    .map(|e| (avg - *e).powf(2.0))
+                    .sum::<f32>()
+                    / focal_distance_vec.len() as f32;
+                stddev = variance.sqrt();
+            }
         }
 
         total_samples += samples_per_iteration;
-        wavelength_sweep += wavelength_sweep_speed;
-        wavelength_sweep %= 2.0;
-        let lambda =
-            wavelength_bounds.span() * (1.0 - wavelength_sweep).abs() + wavelength_bounds.lower;
+
+        // let lambda = wavelength_bounds.span() * random::<f32>() + wavelength_bounds.lower;
 
         let (a, b) = film
             .buffer
             .par_iter_mut()
-            .zip(direction_filter_film.buffer.par_iter_mut())
             .enumerate()
-            .map(|(i, (pixel, direction))| {
+            .map(|(i, pixel)| {
                 let px = i % width;
                 let py = i / width;
 
-                let mut radius = direction.w();
                 let (mut successes, mut attempts) = (0, 0);
+                let lambda = wavelength_bounds.span() * random::<f32>() + wavelength_bounds.lower;
 
                 let central_point = Point3::new(
                     ((px as f32 + 0.5) / width as f32 - 0.5) * sensor_size,
                     ((py as f32 + 0.5) / height as f32 - 0.5) * sensor_size,
                     film_position,
                 );
+                let film_radius = central_point.x().hypot(central_point.y());
+                let mut direction = direction_cache_film.at_uv((
+                    film_radius / (SQRT_2 * sensor_size / 2.0),
+                    (lambda - wavelength_bounds.lower) / wavelength_bounds.span(),
+                ));
+                // direction is pointing towards the center somewhat and assumes direction.y() == 0.0
+                // thus rotate to match actual central point of ray.
 
-                // try and find better direction and radius for sampling.
+                let rotation_angle = central_point.y().atan2(central_point.x());
+                let [dx, _, dz, w]: [f32; 4] = direction.0.into();
+                direction = Vec3::from_raw(f32x4::new(
+                    dx * rotation_angle.cos(),
+                    dx * rotation_angle.sin(),
+                    dz,
+                    w,
+                ));
+                let radius = w * 1.1;
 
-                direction.0 = direction.0.replace(3, radius);
                 for _ in 0..samples_per_iteration {
                     let [mut x, mut y, z, _]: [f32; 4] = central_point.0.into();
                     x += (random::<f32>() - 0.5) / width as f32 * sensor_size;
@@ -705,7 +691,7 @@ fn main() {
                     // choose direction somehow
                     let s2d = Sample2D::new_random_sample();
                     let frame =
-                        TangentFrame::from_normal(Vec3::from_raw((*direction).0.replace(3, 0.0)));
+                        TangentFrame::from_normal(Vec3::from_raw(direction.0.replace(3, 0.0)));
 
                     let phi = i as f32 / 10.0 * std::f32::consts::TAU;
                     let r = s2d.x.sqrt() * radius;
@@ -714,6 +700,7 @@ fn main() {
 
                     let ray = Ray::new(Point3::new(x, y, z), v.normalized());
 
+                    attempts += 1;
                     // do actual tracing through lens for film sample
                     let result =
                         lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
@@ -724,6 +711,7 @@ fn main() {
                         tau,
                     }) = result
                     {
+                        successes += 1;
                         let t = (wall_position - pupil_ray.origin.z()) / pupil_ray.direction.z();
                         let point_at_10 = pupil_ray.point_at_parameter(t);
                         let uv = (
