@@ -9,7 +9,7 @@ fn f(x: f32) -> f32 {
     let a2 = 0.3 * sqrt_tau;
     (gaussian(x as f64, a0.recip(), 0.0, 2.0, 2.0)
         + gaussian(x as f64, a1.recip(), 0.0, 1.0, 1.0)
-        + gaussian(x as f64, 2.4 * a2.recip(), 0.0, 0.3, 0.3)) as f32
+        + gaussian(x as f64, 2.1 * a2.recip(), 0.0, 0.3, 0.3)) as f32
 }
 
 const NUM_SAMPLES: usize = 8;
@@ -22,7 +22,7 @@ fn smis_test() {
 
     let c = std::f32::consts::PI / 2.0 - 0.2;
     let mut s = 0.0;
-    let n = 100;
+    let n = 1000;
     for i in 0..n {
         // 4 technique + pdf samples per trial
         for j in 0..NUM_SAMPLES {
