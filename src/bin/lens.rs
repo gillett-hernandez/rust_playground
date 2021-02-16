@@ -277,7 +277,7 @@ fn main() {
     }
 
     let original_aperture_radius = lens_assembly.aperture_radius();
-    let mut aperture_radius = original_aperture_radius / 2.0;
+    let mut aperture_radius = original_aperture_radius / 10.0; // start with small aperture
     let mut heat_bias = 0.01;
     let mut heat_cap = 10.0;
     let mut lens_zoom = 0.0;
