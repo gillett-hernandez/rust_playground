@@ -362,6 +362,7 @@ fn main() {
     let mut efficiency = 0.0;
     let efficiency_heat = 0.99;
     let mut mode = Mode::PinLight;
+    let mut paused = false;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut clear_film = false;
@@ -434,6 +435,11 @@ fn main() {
                     println!("mode switched to film size mode");
                     println!("{:?}", sensor_size);
                     last_pressed_hotkey = Key::E;
+                }
+                Key::P => {
+                    // pause simulation
+                    println!("switching pause state");
+                    paused = !paused;
                 }
                 Key::NumPadMinus | Key::NumPadPlus => {
                     // pass
@@ -598,6 +604,15 @@ fn main() {
                 }
                 _ => {}
             }
+        }
+        if paused {
+            let pause_duration = std::time::Duration::from_nanos((frame_dt * 1_000_000.0) as u64);
+            std::thread::sleep(pause_duration);
+
+            window
+                .update_with_buffer(&window_pixels.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
+                .unwrap();
+            continue;
         }
         if window.is_key_pressed(Key::Space, KeyRepeat::Yes) {
             clear_film = true;
