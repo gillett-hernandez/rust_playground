@@ -340,8 +340,8 @@ fn main() {
 
     let wavelength_bounds = BOUNDED_VISIBLE_RANGE;
 
-    let direction_cache_radius_bins = 512;
-    let direction_cache_wavelength_bins = 512;
+    let direction_cache_radius_bins = 128;
+    let direction_cache_wavelength_bins = 128;
 
     let mut direction_cache_film = recalculate_and_cache_directions(
         SQRT_2 * sensor_size / 2.0, // diagonal.
@@ -456,89 +456,91 @@ fn main() {
         if window.is_key_pressed(Key::NumPadMinus, KeyRepeat::Yes) {
             config_direction -= 1.0;
         }
-        match last_pressed_hotkey {
-            Key::A => {
-                // aperture
-                aperture_radius *= 1.1f32.powf(config_direction);
-                heat_bias *= 1.1f32.powf(config_direction);
-                clear_direction_cache = true;
-                println!(
-                    "{:?}, f stop = {:?}",
-                    aperture_radius,
-                    original_aperture_radius / aperture_radius
-                );
-            }
-            Key::F => {
-                // Film
-                clear_film = true;
-                clear_direction_cache = true;
-                total_samples = 0;
-                println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
-                film_position += 1.0 * config_direction;
-                println!(
-                    "{:?}, {:?}",
-                    film_position,
-                    lens_assembly.total_thickness_at(lens_zoom)
-                );
-            }
-            Key::W => {
-                // Wall
-
-                clear_film = true;
-                total_samples = 0;
-                wall_position += 10.0 * config_direction;
-                println!("{:?}", wall_position);
-                println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
-            }
-            Key::H => {
-                // Heat
-                heat_bias *= 1.1f32.powf(config_direction);
-                println!("{:?}", heat_bias);
-            }
-            Key::R => {
-                // wavelength sweep
-                wavelength_sweep_speed *= 1.1f32.powf(config_direction);
-                println!("{:?}", wavelength_sweep_speed);
-            }
-            Key::C => {
-                // heat cap
-                heat_cap *= 1.1f32.powf(config_direction);
-                println!("{:?}", heat_cap);
-            }
-            Key::T => {
-                // texture scale
-                texture_scale *= 1.1f32.powf(config_direction);
-                println!("{:?}", texture_scale);
-            }
-            Key::Z => {
-                clear_film = true;
-                clear_direction_cache = true;
-                total_samples = 0;
-                lens_zoom += 0.01 * config_direction;
-                println!("{:?}", lens_zoom);
-            }
-            Key::S => {
-                let tmp_dir = config_direction as i32;
-                match tmp_dir {
-                    1 => samples_per_iteration += 1,
-                    -1 => {
-                        if samples_per_iteration > 1 {
-                            samples_per_iteration -= 1;
-                        }
-                    }
-                    _ => {}
+        if config_direction.abs() > 0.0 {
+            match last_pressed_hotkey {
+                Key::A => {
+                    // aperture
+                    aperture_radius *= 1.1f32.powf(config_direction);
+                    heat_bias *= 1.1f32.powf(config_direction);
+                    clear_direction_cache = true;
+                    println!(
+                        "{:?}, f stop = {:?}",
+                        aperture_radius,
+                        original_aperture_radius / aperture_radius
+                    );
                 }
+                Key::F => {
+                    // Film
+                    clear_film = true;
+                    clear_direction_cache = true;
+                    total_samples = 0;
+                    println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
+                    film_position += 1.0 * config_direction;
+                    println!(
+                        "{:?}, {:?}",
+                        film_position,
+                        lens_assembly.total_thickness_at(lens_zoom)
+                    );
+                }
+                Key::W => {
+                    // Wall
 
-                println!("{:?}", samples_per_iteration);
+                    clear_film = true;
+                    total_samples = 0;
+                    wall_position += 10.0 * config_direction;
+                    println!("{:?}", wall_position);
+                    println!("{:?}, {}, {}", focal_distance_suggestion, variance, stddev);
+                }
+                Key::H => {
+                    // Heat
+                    heat_bias *= 1.1f32.powf(config_direction);
+                    println!("{:?}", heat_bias);
+                }
+                Key::R => {
+                    // wavelength sweep
+                    wavelength_sweep_speed *= 1.1f32.powf(config_direction);
+                    println!("{:?}", wavelength_sweep_speed);
+                }
+                Key::C => {
+                    // heat cap
+                    heat_cap *= 1.1f32.powf(config_direction);
+                    println!("{:?}", heat_cap);
+                }
+                Key::T => {
+                    // texture scale
+                    texture_scale *= 1.1f32.powf(config_direction);
+                    println!("{:?}", texture_scale);
+                }
+                Key::Z => {
+                    clear_film = true;
+                    clear_direction_cache = true;
+                    total_samples = 0;
+                    lens_zoom += 0.01 * config_direction;
+                    println!("{:?}", lens_zoom);
+                }
+                Key::S => {
+                    let tmp_dir = config_direction as i32;
+                    match tmp_dir {
+                        1 => samples_per_iteration += 1,
+                        -1 => {
+                            if samples_per_iteration > 1 {
+                                samples_per_iteration -= 1;
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    println!("{:?}", samples_per_iteration);
+                }
+                Key::E => {
+                    clear_film = true;
+                    clear_direction_cache = true;
+                    total_samples = 0;
+                    sensor_size *= 1.1f32.powf(config_direction);
+                    println!("{:?}", sensor_size);
+                }
+                _ => {}
             }
-            Key::E => {
-                clear_film = true;
-                clear_direction_cache = true;
-                total_samples = 0;
-                sensor_size *= 1.1f32.powf(config_direction);
-                println!("{:?}", sensor_size);
-            }
-            _ => {}
         }
 
         if paused {
@@ -705,7 +707,11 @@ fn main() {
                     );
 
                     // let (phi, dphi) = (angles00.extract(0), angles00.extract(1));
+
+                    // direct lookup through uv
                     // let [phi, dphi, _, _]: [f32; 4] = direction_cache_film.at_uv((u, v)).into();
+
+                    // bilinear interpolation
                     let (phi, dphi) = (
                         (1.0 - du) * (1.0 - dv) * angles00.extract(0)
                             + du * (1.0 - dv) * angles01.extract(0)
@@ -730,15 +736,21 @@ fn main() {
                     let radius = dphi * 1.01;
 
                     // choose direction somehow
+
                     let s2d = Sample2D::new_random_sample();
-                    let frame =
-                        TangentFrame::from_normal(Vec3::from_raw(direction.0.replace(3, 0.0)));
-
-                    let phi = random::<f32>() * TAU;
-                    let r = s2d.x.sqrt() * radius;
-                    let v = Vec3::Z + Vec3::new(r * phi.cos(), r * phi.sin(), 0.0);
-                    let v = frame.to_world(&v.normalized());
-
+                    let v;
+                    if true {
+                        // using lens symmetry sampler
+                        let frame =
+                            TangentFrame::from_normal(Vec3::from_raw(direction.0.replace(3, 0.0)));
+                        let phi = random::<f32>() * TAU;
+                        let r = s2d.x.sqrt() * radius;
+                        let unnormalized_v = Vec3::Z + Vec3::new(r * phi.cos(), r * phi.sin(), 0.0);
+                        v = frame.to_world(&unnormalized_v.normalized());
+                    } else {
+                        // random cosine sampling
+                        v = random_cosine_direction(s2d);
+                    }
                     let ray = Ray::new(Point3::new(x, y, z), v.normalized());
 
                     attempts += 1;
@@ -795,7 +807,8 @@ fn main() {
                 (successes, attempts)
             })
             .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
-        efficiency = (1.0 - efficiency_heat) * efficiency + efficiency_heat * (a as f32 / b as f32);
+        efficiency =
+            (efficiency_heat) * efficiency + (1.0 - efficiency_heat) * (a as f32 / b as f32);
 
         window_pixels
             .buffer
