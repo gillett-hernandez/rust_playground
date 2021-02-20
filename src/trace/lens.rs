@@ -216,7 +216,8 @@ impl LensAssembly {
         let total_thickness = self.total_thickness_at(zoom);
         let mut position = -total_thickness;
         let t = (position - ray.origin.z()) / (ray.direction.z());
-        let mut jacobian = f32x4::splat(1.0);
+        // compute jacobian
+        // let mut jacobian = f32x4::splat(1.0);
         ray.origin = ray.point_at_parameter(t);
         for (k, lens) in self.lenses.iter().rev().enumerate() {
             let r = -lens.radius;
@@ -732,7 +733,7 @@ mod test {
         -225.28		0.23				air							35
         175.1		8.48				LAK9		1.691	54.7	35
         -203.54		55.742				air							35";
-        let (lenses, last_ior, last_vno) = parse_lenses_from(spec);
+        let (lenses, _last_ior, _last_vno) = parse_lenses_from(spec);
         let lens_assembly = LensAssembly::new(&lenses);
         let output = lens_assembly.trace_forward(
             0.0,
@@ -741,7 +742,7 @@ mod test {
                 lambda: 500.0,
             },
             1.0,
-            |e| (false, true),
+            |_| (false, true),
         );
 
         println!("{:?}", output);

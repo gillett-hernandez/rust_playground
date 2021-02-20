@@ -1,7 +1,4 @@
-use crate::{
-    math::{Point3, Ray, Sample2D, SpectralPowerDistributionFunction, Vec3, SPD},
-    random::random_on_unit_sphere,
-};
+use crate::math::{Point3, Ray, Sample2D, SpectralPowerDistributionFunction, Vec3, SPD};
 use crate::{
     math::{Sample1D, TangentFrame},
     random::random_cosine_direction,
@@ -93,7 +90,7 @@ impl ConstDiffuseEmitter {
 }
 
 impl Material for ConstDiffuseEmitter {
-    fn sample(&self, _lambda: f32, wi: Vec3, s: Sample2D) -> Vec3 {
+    fn sample(&self, _lambda: f32, _wi: Vec3, s: Sample2D) -> Vec3 {
         random_cosine_direction(s)
     }
 
@@ -105,7 +102,7 @@ impl Material for ConstDiffuseEmitter {
             (0.0, 0.0)
         }
     }
-    fn emission(&self, lambda: f32, wo: Vec3) -> f32 {
+    fn emission(&self, lambda: f32, _wo: Vec3) -> f32 {
         self.emission_color.evaluate_power(lambda) / PI
     }
 }

@@ -6,19 +6,18 @@ use std::f32::{
     EPSILON,
 };
 
-use exr::block::chunk;
 use lens::*;
 use lib::*;
 
 use math::XYZColor;
+#[allow(unused_imports)]
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
-use ordered_float::OrderedFloat;
+
 use packed_simd::f32x4;
 use rand::prelude::*;
 use random::random_cosine_direction;
 use rayon::prelude::*;
 
-use lib::trace::*;
 use tonemap::{sRGB, Tonemapper};
 
 fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
@@ -85,7 +84,7 @@ where
         // switch flag to change from random to stratified.
         let ray_origin = Point3::new(radius, 0.0, film_position);
         let mut direction;
-        let mut state = 0;
+        // let mut state = 0;
         loop {
             // directions range from straight forward (0 degrees) to almost critical (90 degrees, tangent)
             if true {
@@ -95,18 +94,14 @@ where
                 direction = Vec3::new(-angle.sin(), 0.0, angle.cos());
             } else {
                 // stratified sampling along axis until direction is found.
-                state += 1;
+                // state += 1;
                 panic!();
             }
             let ray = Ray::new(ray_origin, direction);
             let result = lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
                 (aperture_callback(aperture_radius, e), false)
             });
-            if let Some(Output {
-                ray: pupil_ray,
-                tau,
-            }) = result
-            {
+            if let Some(Output { .. }) = result {
                 // found good direction, so break
                 break;
             }
@@ -132,11 +127,7 @@ where
                     lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
                         (aperture_callback(aperture_radius, e), false)
                     });
-                if let Some(Output {
-                    ray: pupil_ray,
-                    tau,
-                }) = result
-                {
+                if let Some(Output { .. }) = result {
                     // found good direction. keep expanding.
                     max_angle = max_angle.max(new_angle);
                     min_angle = min_angle.min(new_angle);
@@ -188,7 +179,6 @@ fn main() {
     let width = film.width;
     let height = film.height;
 
-    let mut t = 0.0;
     let frame_dt = 6944.0 / 1000000.0;
     // let spec = "35.0 20.0 bk7 1.5 54.0 15.0
     // -35.0 1.73 air        15.0
@@ -266,7 +256,7 @@ fn main() {
                                                             // -65.39 0.18 air                       25.0
                                                             // -8741.25 6.64 abbe 1.6583 57.3        30.0
                                                             // -117.55 131.19 air                    30.0"; // wideangle 2
-    let (lenses, last_ior, last_vno) = parse_lenses_from(spec);
+    let (lenses, _last_ior, _last_vno) = parse_lenses_from(spec);
     let lens_assembly = LensAssembly::new(&lenses);
 
     let scene = get_scene("textures.toml").unwrap();
@@ -619,11 +609,7 @@ fn main() {
                         lens_assembly.trace_forward(lens_zoom, &Input { ray, lambda }, 1.0, |e| {
                             (bladed_aperture(aperture_radius, 6, e), false)
                         });
-                    if let Some(Output {
-                        ray: pupil_ray,
-                        tau,
-                    }) = result
-                    {
+                    if let Some(Output { ray: pupil_ray, .. }) = result {
                         let dt = (-pupil_ray.origin.y()) / pupil_ray.direction.y();
                         let point = pupil_ray.point_at_parameter(dt);
                         // println!("{:?}", point);

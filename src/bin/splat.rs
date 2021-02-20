@@ -6,19 +6,14 @@ use lib::*;
 extern crate exr;
 use exr::prelude::rgba_image::*;
 
-use std::collections::HashMap;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
+
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use nalgebra::{Matrix3, Vector3};
 use packed_simd::f32x4;
 use rand::prelude::*;
-
-use rand::seq::SliceRandom;
-use rand::{thread_rng, RngCore};
 
 fn main() {
     let light_films: Arc<Mutex<Vec<Film<f32x4>>>> = Arc::new(Mutex::new(Vec::new()));

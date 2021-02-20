@@ -72,7 +72,6 @@ fn smis_test() {
     let mut fs: [f32; NUM_SAMPLES] = [0.0; NUM_SAMPLES];
     let mut xs: [f32; NUM_SAMPLES] = [0.0; NUM_SAMPLES];
 
-    let c = std::f32::consts::PI / 2.0 - 0.2;
     let mut s = 0.0;
     let n = 1000;
 
@@ -171,7 +170,7 @@ fn smis_test() {
 }
 
 fn bsdf_integral_test() {
-    let mut s = 0.0;
+    // let mut s = 0.0;
 }
 
 fn main() {

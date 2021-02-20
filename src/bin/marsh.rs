@@ -1,5 +1,3 @@
-use std::ops::{Div, Mul};
-
 fn refract(sin_i: f64, ior_1: f64, ior_2: f64) -> f64 {
     // let cos_i_2 = cos_i * cos_i;
     // let sin_i_2 = 1.0 - cos_i_2;
