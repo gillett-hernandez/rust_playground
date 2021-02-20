@@ -24,6 +24,8 @@ cpal = "0.13.0"
 minifb = "0.19.1"
 statrs = "0.13.0"
 wgpu = "0.7.0"
+winit = "0.24.0"
+line_drawing = "0.8.0"
 
 [build-dependencies]
 serde = { version = "1.0.120", features = ["derive"] }
