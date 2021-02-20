@@ -1,5 +1,4 @@
 use crate::film::Film;
-use crate::math::*;
 use crate::parse::curves::{parse_curve, CurveData};
 use crate::*;
 

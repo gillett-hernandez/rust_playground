@@ -10,19 +10,8 @@ pub use film::Film;
 pub use parse::*;
 pub use trace::*;
 
-use std::collections::HashMap;
-use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
-
 use nalgebra::{Matrix3, Vector3};
 use packed_simd::f32x4;
-use rand::prelude::*;
-
-use rand::seq::SliceRandom;
-use rand::{thread_rng, RngCore};
 
 pub fn gaussian(x: f64, alpha: f64, mu: f64, sigma1: f64, sigma2: f64) -> f64 {
     let sqrt = (x - mu) / (if x < mu { sigma1 } else { sigma2 });
@@ -122,25 +111,24 @@ pub fn triple_to_u32(triple: (u8, u8, u8)) -> u32 {
 pub fn blit_circle(film: &mut Film<u32>, radius: f32, x: usize, y: usize, c: u32) {
     let approx_pixel_circumference = radius as f32 * std::f32::consts::TAU;
 
-    let PIXEL_X_SIZE = 1.0 / film.width as f32;
-    let PIXEL_Y_SIZE = 1.0 / film.height as f32;
+    let pixel_x_size = 1.0 / film.width as f32;
+    let pixel_y_size = 1.0 / film.height as f32;
     for phi in 0..(approx_pixel_circumference as usize) {
         let (new_px, new_py) = (
-            (x as f32 * PIXEL_X_SIZE
+            (x as f32 * pixel_x_size
                 + radius as f32
-                    * PIXEL_X_SIZE
+                    * pixel_x_size
                     * (phi as f32 * std::f32::consts::TAU / approx_pixel_circumference).cos())
-                / PIXEL_X_SIZE,
-            (y as f32 * PIXEL_Y_SIZE
+                / pixel_x_size,
+            (y as f32 * pixel_y_size
                 + radius as f32
-                    * PIXEL_Y_SIZE
+                    * pixel_y_size
                     * (phi as f32 * std::f32::consts::TAU / approx_pixel_circumference).sin())
-                / PIXEL_Y_SIZE,
+                / pixel_y_size,
         );
         attempt_write(film, new_px as usize, new_py as usize, c);
     }
 }
-
 
 #[derive(Clone)]
 pub struct Texture4 {

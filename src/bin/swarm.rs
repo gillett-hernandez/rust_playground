@@ -1,9 +1,7 @@
 #![feature(slice_fill)]
 extern crate minifb;
 
-use lib::*;
-
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
+use minifb::{Key, Scale, Window, WindowOptions};
 use rand::prelude::*;
 use rayon::prelude::*;
 
@@ -42,13 +40,13 @@ impl Swarmling {
         self.vx = self.vx / scale;
         self.vy = self.vy / scale;
     }
-    pub fn turn_towards(&mut self, tx: f32, ty: f32, speed: f32) {
+    pub fn _turn_towards(&mut self, tx: f32, ty: f32, speed: f32) {
         let (dx, dy) = (tx - self.x, ty - self.y);
         self.vx += dx * speed;
         self.vy += dy * speed;
         // self.normalize();
     }
-    pub fn align_with(&mut self, tvx: f32, tvy: f32, speed: f32) {
+    pub fn _align_with(&mut self, tvx: f32, tvy: f32, speed: f32) {
         let (dvx, dvy) = (tvx - self.vx, tvy - self.vy);
         self.vx -= dvx * speed;
         self.vy -= dvy * speed;

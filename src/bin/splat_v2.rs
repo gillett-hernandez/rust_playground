@@ -5,30 +5,25 @@
 
 use lib::*;
 
-use nalgebra::{Matrix3, Vector3};
 use packed_simd::f32x4;
 
 extern crate exr;
 use exr::prelude::rgba_image::*;
 
-use std::collections::HashMap;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
+
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rayon::prelude::*;
 
 use rand::prelude::*;
-use rand::seq::SliceRandom;
-use rand::{thread_rng, RngCore};
 
 use crossbeam::channel::unbounded;
 
 fn main() {
-    let mut light_films: Arc<Mutex<Vec<Arc<Mutex<Film<f32x4>>>>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let light_films: Arc<Mutex<Vec<Arc<Mutex<Film<f32x4>>>>>> = Arc::new(Mutex::new(Vec::new()));
     for _ in 0..10 {
         light_films
             .lock()
@@ -53,7 +48,7 @@ fn main() {
             total_taken += 100000;
             // data.par_sort_unstable_by(|a, b| (a.1).1.partial_cmp(&(b.1).1).unwrap());
             println!("taken {} elements", total_taken);
-            data.par_iter().enumerate().for_each(|(i, v)| {
+            data.par_iter().enumerate().for_each(|(_i, v)| {
                 let (sw, (pixel, film_id)): ((f32, f32), ((f32, f32), usize)) = *v;
                 let film = &mut light_films[film_id].lock().unwrap();
 

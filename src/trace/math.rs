@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{gaussian, x_bar, y_bar, z_bar};
 use ordered_float::OrderedFloat;
-use std::f32::{consts::PI, INFINITY};
+use std::f32::INFINITY;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use std::fmt;

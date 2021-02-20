@@ -1,17 +1,15 @@
-use rand::prelude::*;
-
-fn simulation_step<F>(data: &mut Vec<u32>, birth_rate: u32, P: F)
+fn simulation_step<F>(data: &mut Vec<u32>, birth_rate: u32, survival_probability: F)
 where
     F: Fn(u32) -> f32,
 {
     let last = data.last().unwrap();
     let len = data.len();
-    let oldest = (*last as f32 * P(len as u32)) as u32;
+    let oldest = (*last as f32 * survival_probability(len as u32)) as u32;
     if oldest > 0 {
         data.push(oldest);
     }
     for i in (1..len).rev() {
-        data[i] = (data[i - 1] as f32 * P(i as u32 - 1)) as u32;
+        data[i] = (data[i - 1] as f32 * survival_probability(i as u32 - 1)) as u32;
     }
     data[0] = birth_rate;
 }
@@ -46,8 +44,8 @@ fn main() {
         "total population older than 400, {}",
         data.iter()
             .enumerate()
-            .filter(|(i, v)| *i > 400usize)
-            .map(|(i, v)| v)
+            .filter(|(i, _)| *i > 400usize)
+            .map(|(_, v)| v)
             .sum::<u32>()
     );
 }

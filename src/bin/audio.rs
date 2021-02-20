@@ -1,15 +1,11 @@
 #![feature(slice_fill)]
 extern crate minifb;
 
-use lib::*;
-
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Data, Sample, SampleFormat, StreamInstant};
+use cpal::SampleFormat;
 use crossbeam::channel::unbounded;
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
-use ordered_float::OrderedFloat;
+use minifb::{Key, Scale, Window, WindowOptions};
 use packed_simd::f32x16;
-use rand::prelude::*;
 use rayon::prelude::*;
 
 #[derive(Copy, Clone, Debug)]
@@ -165,14 +161,14 @@ LinearCurve::Tabulated { signal, mode } => {
     }
 }*/
 
-fn read_input<T: Sample>(data: &[T], info: &cpal::InputCallbackInfo) {
+/* fn read_input<T: Sample>(data: &[T], info: &cpal::InputCallbackInfo) {
     let mut time: f32 = 0.1;
     let mul = 1.0 / 48000.0;
     for sample in data.iter() {
         time += mul * 1.0;
         // *sample = Sample::from(&time.sin());
     }
-}
+} */
 
 fn dft(signal: &Vec<f32>, sample_rate: usize, num_bins: usize) -> Option<Vec<f32>> {
     if signal.len() == 0 {
@@ -203,8 +199,8 @@ fn dft(signal: &Vec<f32>, sample_rate: usize, num_bins: usize) -> Option<Vec<f32
     // };
     // println!("{:?}", interpolated);
     let mut bins: Vec<(f32, f32)> = Vec::new();
-    let freq = min_detectable_frequency;
-    let N = signal.len();
+    // let freq = min_detectable_frequency;
+    let n = signal.len();
     // for i in 0..num_bins {
     //     bins.push((0.0, 0.0));
     //     // time from peak to peak
@@ -229,12 +225,12 @@ fn dft(signal: &Vec<f32>, sample_rate: usize, num_bins: usize) -> Option<Vec<f32
     //     }
     //     freq *= mult;
     // }
-    for i in 0..num_bins {
+    for _i in 0..num_bins {
         bins.push((0.0, 0.0));
     }
     bins.par_iter_mut().enumerate().for_each(|(k, bin)| {
-        for n in 0..N {
-            let inner = std::f32::consts::TAU * k as f32 * n as f32 / N as f32;
+        for n in 0..n {
+            let inner = std::f32::consts::TAU * k as f32 * n as f32 / n as f32;
             let (sin, cos) = inner.sin_cos();
             bin.0 += signal[n] * cos;
             bin.1 += -signal[n] * sin;
@@ -243,13 +239,13 @@ fn dft(signal: &Vec<f32>, sample_rate: usize, num_bins: usize) -> Option<Vec<f32
 
     let mut amplitudes = Vec::new();
     for b in bins.iter() {
-        amplitudes.push(b.0.hypot(b.1) / N as f32);
+        amplitudes.push(b.0.hypot(b.1) / n as f32);
     }
 
     let interpolated = LinearCurve {
         signal: amplitudes.clone(),
         mode: InterpolationMode::Cubic,
-        bounds: Bounds1D::new(0.0, N as f32),
+        bounds: Bounds1D::new(0.0, n as f32),
     };
 
     let samples = 8;
@@ -312,11 +308,11 @@ fn main() {
     let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
     let sample_format = output_supported_config.sample_format();
     let output_config = output_supported_config.into();
-    let (a, b) = unbounded::<f32x16>();
+    let (_a, b) = unbounded::<f32x16>();
     let output_stream = match sample_format {
         SampleFormat::F32 => output_device.build_output_stream(
             &output_config,
-            move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
+            move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
                 let req_samples = data.len();
                 let mut received_samples = 0;
                 'outer: while received_samples < req_samples {
@@ -356,7 +352,7 @@ fn main() {
     let input_stream = match input_sample_format {
         SampleFormat::F32 => input_device.build_input_stream(
             &input_config,
-            move |data: &[f32], info: &cpal::InputCallbackInfo| {
+            move |data: &[f32], _info: &cpal::InputCallbackInfo| {
                 let req_samples = data.len();
                 let mut received_samples = 0;
                 'outer: while received_samples < req_samples {
@@ -384,7 +380,7 @@ fn main() {
     let samples_per_frame = (sample_rate as f32) / framerate;
     println!("samples per frame: {}", samples_per_frame);
 
-    let spread = f32x16::new(
+    let _spread = f32x16::new(
         0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
     );
 
@@ -392,7 +388,7 @@ fn main() {
     // let frequency = std::f32::consts::PI * 200.0;
     let y_coordinate = 100 + 64 / 2;
     let y_span = 64;
-    let freq_range = 22000;
+    let _freq_range = 22000;
     let num_bins = 1024;
     let mut last_bins = Vec::new();
 

@@ -5,7 +5,7 @@ use std::f32::consts::SQRT_2;
 
 use lib::*;
 
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
 use ordered_float::OrderedFloat;
 use rand::prelude::*;
 use rayon::prelude::*;
@@ -162,8 +162,8 @@ fn main() {
 
     particles.push(particle);
     for i in 0..num_particles - 1 {
-        let phi = random::<f32>() * std::f32::consts::TAU;
-        let mag = random::<f32>() * 0.0 + 0.4;
+        let _phi = random::<f32>() * std::f32::consts::TAU;
+        let _mag = random::<f32>() * 0.0 + 0.4;
         let r = random::<f32>() * 0.003 + 0.003;
         let particle = loop {
             let x = random::<f32>() * (1.0 - 2.0 * r) + r;
@@ -290,7 +290,7 @@ fn main() {
                 std::f32::NEG_INFINITY,
             );
 
-            let calculated_mean_free_path =
+            let _calculated_mean_free_path =
                 (4.0 * (0.003 + 0.003 * 0.5) * num_small_particles * SQRT_2).recip();
             for particle in particles.iter_mut() {
                 let (px, py) = (

@@ -1,6 +1,6 @@
 pub mod curves;
 pub mod texture;
-use curves::*;
+
 pub use texture::*;
 
 use serde::{Deserialize, Serialize};
