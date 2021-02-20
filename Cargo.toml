@@ -23,6 +23,7 @@ cpal = "0.13.0"
 # pbr = "1.0.3"
 minifb = "0.19.1"
 statrs = "0.13.0"
+wgpu = "0.7.0"
 
 [build-dependencies]
 serde = { version = "1.0.120", features = ["derive"] }
