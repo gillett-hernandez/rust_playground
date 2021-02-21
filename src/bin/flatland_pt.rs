@@ -294,6 +294,180 @@ impl From<Point2> for Vec2 {
     }
 }
 
+pub fn reflect(wi: Vec2, normal: Vec2) -> Vec2 {
+    let wi = -wi;
+    (wi - 2.0 * (wi * normal) * normal).normalized()
+}
+
+pub fn refract(wi: Vec2, normal: Vec2, eta: f32) -> Option<Vec2> {
+    let cos_i = wi * normal;
+    let sin_2_theta_i = (1.0 - cos_i * cos_i).max(0.0);
+    let sin_2_theta_t = eta * eta * sin_2_theta_i;
+    if sin_2_theta_t >= 1.0 {
+        return None;
+    }
+    let cos_t = (1.0 - sin_2_theta_t).sqrt();
+    Some((-wi * eta + normal * (eta * cos_i - cos_t)).normalized())
+}
+
+pub fn fresnel_dielectric(eta_i: f32, eta_t: f32, cos_i: f32) -> f32 {
+    // let swapped = if cos_i < 0 {
+    //     cos_i = -cos_i;
+    //     true
+    // } else {
+    //     false
+    // };
+    // let (eta_i, eta_t) = if swapped {
+    //     (eta_t, eta_i)
+    // } else {
+    //     (eta_i, eta_t)
+    // };
+    let cos_i = cos_i.clamp(-1.0, 1.0);
+
+    let (cos_i, eta_i, eta_t) = if cos_i < 0.0 {
+        (-cos_i, eta_t, eta_i)
+    } else {
+        (cos_i, eta_i, eta_t)
+    };
+
+    let sin_t = eta_i / eta_t * (0.0f32).max(1.0 - cos_i * cos_i).sqrt();
+    let cos_t = (0.0f32).max(1.0 - sin_t * sin_t).sqrt();
+    let ei_ct = eta_i * cos_t;
+    let et_ci = eta_t * cos_i;
+    let ei_ci = eta_i * cos_i;
+    let et_ct = eta_t * cos_t;
+    let r_par = (et_ci - ei_ct) / (et_ci + ei_ct);
+    let r_perp = (ei_ci - et_ct) / (ei_ci + et_ct);
+    (r_par * r_par + r_perp * r_perp) / 2.0
+}
+
+pub fn fresnel_conductor(eta_i: f32, eta_t: f32, k_t: f32, cos_theta_i: f32) -> f32 {
+    let cos_theta_i = cos_theta_i.clamp(-1.0, 1.0);
+
+    // handle dielectrics
+
+    let (cos_theta_i, eta_i, eta_t) = if cos_theta_i < 0.0 {
+        (-cos_theta_i, eta_t, eta_i)
+    } else {
+        (cos_theta_i, eta_i, eta_t)
+    };
+
+    // onto the full equations
+
+    let eta = eta_t / eta_i;
+    let etak = k_t / eta_i;
+
+    let cos_theta_i2 = cos_theta_i * cos_theta_i;
+    let sin_theta_i2 = 1.0 - cos_theta_i2;
+    let eta2 = eta * eta;
+    let etak2 = etak * etak;
+
+    let t0 = eta2 - etak2 - sin_theta_i2;
+    debug_assert!(t0 * t0 + eta2 * etak2 >= 0.0);
+    let a2plusb2 = (t0 * t0 + eta2 * etak2 * 4.0).sqrt();
+    let t1 = a2plusb2 + cos_theta_i2;
+    debug_assert!(a2plusb2 + t0 >= 0.0, "{} {}", a2plusb2, t0);
+    let a = ((a2plusb2 + t0) * 0.5).sqrt();
+    let t2 = a * cos_theta_i * 2.0;
+    let rs = (t1 - t2) / (t1 + t2);
+
+    let t3 = a2plusb2 * cos_theta_i2 + sin_theta_i2 * sin_theta_i2;
+    let t4 = t2 * sin_theta_i2;
+    let rp = rs * (t3 - t4) / (t3 + t4);
+
+    (rs + rp) / 2.0
+}
+
+fn ggx_lambda(alpha: f32, w: Vec2) -> f32 {
+    if w.y() == 0.0 {
+        return 0.0;
+    }
+    let a2 = alpha * alpha;
+    let w2 = Vec2::from_raw(w.0 * w.0);
+    let c = 1.0 + (a2 * w2.x()) / w2.y(); // replace a2 with Vec2 for anistropy
+    c.sqrt() * 0.5 - 0.5
+}
+
+fn ggx_d(alpha: f32, wm: Vec2) -> f32 {
+    let slope = (wm.x() / alpha, 0.0);
+    let slope2 = (slope.0 * slope.0, 0.0);
+    let t = wm.y() * wm.y() + slope2.0;
+    debug_assert!(t > 0.0, "{:?} {:?}", wm, slope2);
+    let a2 = alpha * alpha;
+    let t2 = t * t;
+    let aatt = a2 * t2;
+    debug_assert!(aatt > 0.0, "{} {} {:?}", alpha, t, wm);
+    1.0 / (PI * aatt)
+}
+
+fn ggx_g(alpha: f32, wi: Vec2, wo: Vec2) -> f32 {
+    let bottom = 1.0 + ggx_lambda(alpha, wi) + ggx_lambda(alpha, wo);
+    debug_assert!(bottom != 0.0);
+    bottom.recip()
+}
+
+fn ggx_vnpdf(alpha: f32, wi: Vec2, wh: Vec2) -> f32 {
+    let inv_gl = 1.0 + ggx_lambda(alpha, wi);
+    debug_assert!(wh.0.is_finite().all());
+    (ggx_d(alpha, wh) * (wi * wh).abs()) / (inv_gl * wi.y().abs())
+}
+
+fn ggx_vnpdf_no_d(alpha: f32, wi: Vec2, wh: Vec2) -> f32 {
+    ((wi * wh) / ((1.0 + ggx_lambda(alpha, wi)) * wi.y())).abs()
+}
+
+// fn sample_vndf(alpha: f32, wi: Vec2, sample: Sample2D) -> Vec2 {
+//     let Sample2D { x, y } = sample;
+//     let v = Vec2::new(alpha * wi.x(), wi.y()).normalized();
+
+//     let t1 = if v.y() < 0.9999 {
+//         v.cross(Vec2::Z).normalized()
+//     } else {
+//         Vec2::X
+//     };
+//     let t2 = t1.cross(v);
+//     debug_assert!(v.0.is_finite().all(), "{:?}", v);
+//     debug_assert!(t1.0.is_finite().all(), "{:?}", t1);
+//     debug_assert!(t2.0.is_finite().all(), "{:?}", t2);
+//     let a = 1.0 / (1.0 + v.z());
+//     let r = x.sqrt();
+//     debug_assert!(r.is_finite(), "{}", x);
+//     let phi = if y < a {
+//         y / a * PI
+//     } else {
+//         PI + (y - a) / (1.0 - a) * PI
+//     };
+
+//     let (sin_phi, cos_phi) = phi.sin_cos();
+//     debug_assert!(sin_phi.is_finite() && cos_phi.is_finite(), "{:?}", phi);
+//     let p1 = r * cos_phi;
+//     // let p2 = r * sin_phi * if y < a { 1.0 } else { v.z() };
+//     let value = 1.0 - p1 * p1;
+//     let n = p1 * t1 + value.max(0.0).sqrt() * v;
+
+//     debug_assert!(
+//         n.0.is_finite().all(),
+//         "{:?}, {:?}, {:?}, {:?}, {:?}",
+//         n,
+//         p1,
+//         t1,
+//         t2,
+//         v
+//     );
+//     Vec2::new(alpha * n.x(), n.y().max(0.0)).normalized()
+// }
+
+// fn sample_wh(alpha: f32, wi: Vec2, sample: Sample2D) -> Vec2 {
+//     // normal invert mark
+//     let flip = wi.y() < 0.0;
+//     let wh = sample_vndf(alpha, if flip { -wi } else { wi }, sample);
+//     if flip {
+//         -wh
+//     } else {
+//         wh
+//     }
+// }
+
 #[derive(Copy, Clone, Debug)]
 struct Ray2D {
     pub origin: Point2,
@@ -472,6 +646,14 @@ impl Shape {
     }
 }
 
+fn eta_rel(eta_o: f32, eta_inner: f32, wi: Vec2) -> f32 {
+    if wi.y() < 0.0 {
+        eta_o / eta_inner
+    } else {
+        eta_inner / eta_o
+    }
+}
+
 enum Material {
     Lambertian {
         color: SPD,
@@ -480,6 +662,8 @@ enum Material {
         eta: SPD,
         kappa: SPD,
         roughness: f32,
+        permeable: bool,
+        eta_o: f32,
     },
     DiffuseLight {
         reflection_color: SPD,
@@ -531,7 +715,89 @@ impl Material {
                 eta,
                 kappa,
                 roughness,
-            } => panic!(),
+                permeable,
+                eta_o,
+            } => {
+                let eta = eta.evaluate_power(lambda);
+                let kappa = kappa.evaluate_power(lambda);
+                let wiwo = wi.y() * wo.y();
+                let same_hemisphere = wiwo > 0.0;
+                let g = (wiwo).abs();
+                let cos_i = wi.y();
+
+                let (mut glossy, mut glossy_pdf) = (0.0, 0.0);
+                let (mut transmission, mut transmission_pdf) = (0.0, 0.0);
+                let fresnel;
+
+                if same_hemisphere {
+                    // reflect
+                    let mut wh = (wi + wo).normalized();
+                    if wh.y() < 0.0 {
+                        wh = -wh;
+                    }
+                    let ndotv = wi * wh;
+                    fresnel = fresnel_conductor(*eta_o, eta, kappa, ndotv);
+                    glossy =
+                        fresnel * (0.25 / g) * ggx_d(*roughness, wh) * ggx_g(*roughness, wi, wo);
+                    glossy_pdf = ggx_vnpdf(*roughness, wi, wh) * 0.25 / ndotv.abs();
+                } else {
+                    if *permeable {
+                        let eta_rel = eta_rel(*eta_o, eta, wi);
+
+                        let ggxg = ggx_g(*roughness, wi, wo);
+                        debug_assert!(
+                            wi.0.is_finite().all() && wo.0.is_finite().all(),
+                            "{:?} {:?} {:?} {:?}",
+                            wi,
+                            wo,
+                            ggxg,
+                            cos_i
+                        );
+                        let mut wh = (wi + eta_rel * wo).normalized();
+                        // normal invert mark
+                        if wh.y() < 0.0 {
+                            wh = -wh;
+                        }
+
+                        let partial = ggx_vnpdf_no_d(*roughness, wi, wh);
+                        let ndotv = wi * wh;
+                        let ndotl = wo * wh;
+
+                        let sqrt_denom = ndotv + eta_rel * ndotl;
+                        let eta_rel2 = eta_rel * eta_rel;
+                        let mut dwh_dwo1 = ndotl / (sqrt_denom * sqrt_denom); // dwh_dwo w/o etas
+                        let dwh_dwo2 = eta_rel2 * dwh_dwo1; // dwh_dwo w/etas
+
+                        // match transport_mode {
+                        //     // in radiance mode, the reflectance/transmittance is not scaled by eta^2.
+                        //     // in importance_mode, it is scaled by eta^2.
+                        //     TransportMode::Importance => dwh_dwo1 = dwh_dwo2,
+                        //     _ => {}
+                        // }
+                        debug_assert!(
+                            wh.0.is_finite().all(),
+                            "{:?} {:?} {:?} {:?}",
+                            eta_rel,
+                            ndotv,
+                            ndotl,
+                            sqrt_denom
+                        );
+                        let ggxd = ggx_d(*roughness, wh);
+                        let weight = ggxd * ggxg * ndotv * dwh_dwo1 / g;
+                        transmission_pdf = (ggxd * partial * dwh_dwo2).abs();
+
+                        fresnel = fresnel_dielectric(*eta_o, eta, ndotv);
+                        let inv_reflectance = 1.0 - fresnel;
+                        transmission = inv_reflectance * weight.abs();
+                    } else {
+                        fresnel = 1.0;
+                    }
+                }
+                (
+                    glossy + transmission,
+                    fresnel * glossy_pdf + (1.0 - fresnel) * transmission_pdf,
+                )
+            }
         }
     }
     pub fn sample_bsdf(&self, lambda: f32, wi: Vec2) -> (Vec2, f32, f32) {
@@ -564,7 +830,47 @@ impl Material {
                 eta,
                 kappa,
                 roughness,
-            } => panic!(),
+                permeable,
+                eta_o,
+            } => {
+                let eta = eta.evaluate_power(lambda);
+                let kappa = kappa.evaluate_power(lambda);
+                let cos_theta = wi.y();
+                let fresnel = if *permeable {
+                    fresnel_dielectric(*eta_o, eta, cos_theta)
+                } else {
+                    fresnel_conductor(*eta_o, eta, kappa, cos_theta)
+                };
+                let wo;
+
+                let mut reflect = false;
+                let normal = {
+                    let flip = wi.y() < 0.0;
+                    let wh = Vec2::Y;
+                    if flip {
+                        -wh
+                    } else {
+                        wh
+                    }
+                };
+                let refract_direction = refract(wi, normal, 1.0 / eta_rel(*eta_o, eta, wi));
+                if refract_direction.is_none() {
+                    reflect = true;
+                }
+                let s = random::<f32>();
+                if s < fresnel && !reflect {
+                    reflect = true;
+                } else if s >= fresnel && !reflect {
+                    reflect = false;
+                }
+                if reflect {
+                    wo = Vec2::new(-wi.x(), wi.y());
+                } else {
+                    wo = refract_direction.unwrap();
+                }
+                let (f, pdf) = self.bsdf(lambda, wi, wo);
+                (wo, f, pdf)
+            }
         }
     }
     pub fn sample_le(&self, lambda: f32, point: Point2) -> (Vec2, f32) {
@@ -681,17 +987,17 @@ fn main() {
         bounds: EXTENDED_VISIBLE_RANGE,
         mode: InterpolationMode::Linear,
     };
-    let glass_eta = SPD::Cauchy { a: 1.4, b: 10000.0 };
+    let glass_eta = SPD::Cauchy { a: 1.5, b: 10000.0 };
     let scene = Scene::new(
         vec![
             Shape::Point {
-                p: Point2::new(-0.01, 0.0),
+                p: Point2::new(-0.29, 0.09),
                 material_id: 0,
             },
             Shape::Circle {
                 radius: 0.1,
                 center: Point2::ORIGIN,
-                material_id: 1,
+                material_id: 2,
             },
         ],
         vec![
@@ -699,7 +1005,7 @@ fn main() {
                 reflection_color: white.clone(),
                 emission_color: white.clone(),
                 direction: (0.0f32).to_radians(),
-                radius: 0.3,
+                radius: 0.01,
             },
             Material::Lambertian {
                 color: white.clone(),
@@ -707,7 +1013,9 @@ fn main() {
             Material::GGX {
                 eta: glass_eta,
                 kappa: black,
-                roughness: 0.001,
+                roughness: 0.01,
+                permeable: true,
+                eta_o: 1.01,
             },
         ],
     );
@@ -716,7 +1024,7 @@ fn main() {
         view_bounds.x.span() / width as f32,
         view_bounds.y.span() / height as f32,
     );
-    let mut max_bounces = 4;
+    let mut max_bounces = 16;
     let mut exposure_bias = 10.0;
     let mut new_rays_per_frame = 1000;
 
@@ -738,6 +1046,11 @@ fn main() {
                 Key::B => {
                     max_bounces = (max_bounces + config_move as i32).max(0);
                     println!("new max bounces is {}", max_bounces);
+                }
+                Key::R => {
+                    new_rays_per_frame =
+                        (new_rays_per_frame as isize + config_move as isize).max(1) as usize;
+                    println!("new rays per frame is {}", new_rays_per_frame);
                 }
                 Key::Space => {
                     film.buffer.fill(XYZColor::BLACK);
@@ -862,7 +1175,7 @@ fn main() {
                 (px0 as f32, py0 as f32),
                 (px1 as f32, py1 as f32),
             ) {
-                if x as usize >= WINDOW_WIDTH || y as usize >= WINDOW_HEIGHT {
+                if x as usize >= WINDOW_WIDTH || y as usize >= WINDOW_HEIGHT || x < 0 || y < 0 {
                     continue;
                 }
                 assert!(!b.is_nan(), "{} {}", dx, dy);
