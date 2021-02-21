@@ -502,7 +502,7 @@ impl Material {
                 let cos = wo.y().abs();
                 let f = reflection_color.evaluate(lambda);
                 if wi.y() * wo.y() > 0.0 {
-                    (f * cos, cos / PI)
+                    (f * cos / PI, cos / PI)
                 } else {
                     (0.0, 0.0)
                 }
@@ -513,7 +513,7 @@ impl Material {
                 let cos = wo.y().abs();
                 let f = reflection_color.evaluate(lambda);
                 if wi.y() * wo.y() > 0.0 {
-                    (f * cos, cos / PI)
+                    (f * cos / PI, cos / PI)
                 } else {
                     (0.0, 0.0)
                 }
@@ -522,7 +522,7 @@ impl Material {
                 let cos = wo.y().abs();
                 let f = color.evaluate(lambda);
                 if wi.y() * wo.y() > 0.0 {
-                    (f * cos, cos / PI)
+                    (f * cos / PI, cos / PI)
                 } else {
                     (0.0, 0.0)
                 }
@@ -685,7 +685,7 @@ fn main() {
     let scene = Scene::new(
         vec![
             Shape::Point {
-                p: Point2::new(-0.49, 0.0),
+                p: Point2::new(-0.01, 0.0),
                 material_id: 0,
             },
             Shape::Circle {
