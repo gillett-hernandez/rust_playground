@@ -686,7 +686,7 @@ impl Material {
                 let cos = wo.y().abs();
                 let f = reflection_color.evaluate(lambda);
                 if wi.y() * wo.y() > 0.0 {
-                    (f * cos / PI, cos / PI)
+                    (f * 0.5, cos * 0.5)
                 } else {
                     (0.0, 0.0)
                 }
@@ -697,7 +697,7 @@ impl Material {
                 let cos = wo.y().abs();
                 let f = reflection_color.evaluate(lambda);
                 if wi.y() * wo.y() > 0.0 {
-                    (f * cos / PI, cos / PI)
+                    (f * 0.5, cos * 0.5)
                 } else {
                     (0.0, 0.0)
                 }
@@ -706,7 +706,7 @@ impl Material {
                 let cos = wo.y().abs();
                 let f = color.evaluate(lambda);
                 if wi.y() * wo.y() > 0.0 {
-                    (f * cos / PI, cos / PI)
+                    (f * 0.5, cos * 0.5)
                 } else {
                     (0.0, 0.0)
                 }
@@ -819,10 +819,13 @@ impl Material {
                 (wo, f, pdf)
             }
             Material::Lambertian { .. } => {
-                let y = 1.0 - random::<f32>().powi(2);
-                let x = (random::<f32>() - 0.5).signum() * (1.0 - y.powi(2)).sqrt();
+                // let y = 1.0 - random::<f32>().powi(2);
+                // let x = (random::<f32>() - 0.5).signum() * (1.0 - y.powi(2)).sqrt();
+                let xi = random::<f32>();
+                let sin_i = 2.0 * xi - 1.0;
+                let cos_i = (1.0 - sin_i.powi(2)).sqrt();
 
-                let wo = Vec2::new(x, y) * wi.y().signum();
+                let wo = Vec2::new(sin_i, cos_i) * wi.y().signum();
                 let (f, pdf) = self.bsdf(lambda, wi, wo);
                 (wo, f, pdf)
             }
@@ -1001,11 +1004,11 @@ fn main() {
             },
         ],
         vec![
-            Material::DiffuseDirectionalLight {
+            Material::DiffuseLight {
                 reflection_color: white.clone(),
                 emission_color: white.clone(),
-                direction: (0.0f32).to_radians(),
-                radius: 0.01,
+                // direction: (0.0f32).to_radians(),
+                // radius: 1.0,
             },
             Material::Lambertian {
                 color: white.clone(),
@@ -1163,7 +1166,6 @@ fn main() {
             );
 
             let (dx, dy) = (px1 as isize - px0 as isize, py1 as isize - py0 as isize);
-            let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
             if dx == 0 && dy == 0 {
                 if px0 as usize >= WINDOW_WIDTH || py0 as usize >= WINDOW_HEIGHT {
                     continue;
@@ -1171,15 +1173,54 @@ fn main() {
                 film.buffer[py0 as usize * width + px0 as usize] += line.2;
                 continue;
             }
-            for (x, y) in line_drawing::Midpoint::<f32, isize>::new(
-                (px0 as f32, py0 as f32),
-                (px1 as f32, py1 as f32),
-            ) {
-                if x as usize >= WINDOW_WIDTH || y as usize >= WINDOW_HEIGHT || x < 0 || y < 0 {
-                    continue;
+            if true {
+                if false {
+                    let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+                    for (x, y) in line_drawing::Midpoint::<f32, isize>::new(
+                        (px0 as f32, py0 as f32),
+                        (px1 as f32, py1 as f32),
+                    ) {
+                        if x as usize >= WINDOW_WIDTH
+                            || y as usize >= WINDOW_HEIGHT
+                            || x < 0
+                            || y < 0
+                        {
+                            continue;
+                        }
+                        assert!(!b.is_nan(), "{} {}", dx, dy);
+                        film.buffer[y as usize * width + x as usize] += line.2 * b;
+                    }
+                } else {
+                    let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+                    // let b = 1.0f32;
+                    for ((x, y), a) in line_drawing::XiaolinWu::<f32, isize>::new(
+                        (px0 as f32, py0 as f32),
+                        (px1 as f32, py1 as f32),
+                    ) {
+                        if x as usize >= WINDOW_WIDTH
+                            || y as usize >= WINDOW_HEIGHT
+                            || x < 0
+                            || y < 0
+                        {
+                            continue;
+                        }
+                        assert!(!b.is_nan(), "{} {}", dx, dy);
+                        film.buffer[y as usize * width + x as usize] += line.2 * b * a;
+                    }
                 }
-                assert!(!b.is_nan(), "{} {}", dx, dy);
-                film.buffer[y as usize * width + x as usize] += line.2 * b;
+            } else {
+                let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+
+                for (x, y) in line_drawing::Bresenham::new(
+                    (px0 as isize, py0 as isize),
+                    (px1 as isize, py1 as isize),
+                ) {
+                    if x as usize >= WINDOW_WIDTH || y as usize >= WINDOW_HEIGHT || x < 0 || y < 0 {
+                        continue;
+                    }
+                    assert!(!b.is_nan(), "{} {}", dx, dy);
+                    film.buffer[y as usize * width + x as usize] += line.2 * b;
+                }
             }
         }
 
