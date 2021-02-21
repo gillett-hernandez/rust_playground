@@ -2,9 +2,8 @@
 extern crate line_drawing;
 extern crate minifb;
 
-use minifb::*;
-
 use lib::*;
+use minifb::*;
 
 use math::XYZColor;
 #[allow(unused_imports)]
@@ -14,7 +13,7 @@ use packed_simd::{f32x2, f32x4};
 use rand::prelude::*;
 use rayon::prelude::*;
 use std::{
-    f32::consts::TAU,
+    f32::consts::{PI, TAU},
     ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -316,6 +315,67 @@ impl Ray2D {
     }
 }
 
+// also known as an orthonormal basis.
+#[derive(Copy, Clone, Debug)]
+pub struct TangentFrame2D {
+    pub tangent: Vec2,
+    pub normal: Vec2,
+}
+
+impl TangentFrame2D {
+    pub fn new(tangent: Vec2, normal: Vec2) -> Self {
+        debug_assert!(
+            (tangent * normal).abs() < 0.000001,
+            "tn: {:?} * {:?} was != 0",
+            tangent,
+            normal
+        );
+        TangentFrame2D {
+            tangent: tangent.normalized(),
+
+            normal: normal.normalized(),
+        }
+    }
+    pub fn from_tangent_and_normal(tangent: Vec2, normal: Vec2) -> Self {
+        TangentFrame2D {
+            tangent: tangent.normalized(),
+
+            normal: normal.normalized(),
+        }
+    }
+
+    pub fn from_normal(normal: Vec2) -> Self {
+        // let n2 = Vec2::from_raw(normal.0 * normal.0);
+        // let (x, y, z) = (normal.x(), normal.y(), normal.z());
+        let [nx, ny]: [f32; 2] = normal.0.into();
+        let tangent = if nx.abs() > 0.001 {
+            let dydx = ny / nx;
+            // m1 * m2 == -1
+            // m2 = -1 / m1
+            let t_dydx = -1.0 / dydx;
+            Vec2::new(1.0, t_dydx).normalized()
+        } else {
+            let dxdy = nx / ny;
+            // m1 * m2 == -1
+            // m2 = -1 / m1
+            let t_dxdy = -1.0 / dxdy;
+            Vec2::new(t_dxdy, 1.0).normalized()
+        };
+
+        TangentFrame2D { tangent, normal }
+    }
+
+    #[inline(always)]
+    pub fn to_world(&self, v: &Vec2) -> Vec2 {
+        self.tangent * v.x() + self.normal * v.y()
+    }
+
+    #[inline(always)]
+    pub fn to_local(&self, v: &Vec2) -> Vec2 {
+        Vec2::new(self.tangent * (*v), self.normal * (*v))
+    }
+}
+
 enum Shape {
     Point {
         p: Point2,
@@ -372,7 +432,25 @@ impl Shape {
                 center,
                 material_id,
             } => {
-                panic!()
+                let [x, y]: [f32; 2] = r.origin.0.into();
+                let [dx, dy]: [f32; 2] = r.direction.0.into();
+                let (dxr, dyr) = (x - center.x(), y - center.y());
+                let a = dx * dx + dy * dy;
+                let b = 2.0 * dx * dxr + 2.0 * dy * dyr;
+                let c = dxr * dxr + dyr * dyr - radius * radius;
+                let discriminant = b * b - 4.0 * a * c;
+                let t0 = (-b + discriminant.sqrt()) / (2.0 * a);
+                let t1 = (-b - discriminant.sqrt()) / (2.0 * a);
+                let mut tmin = t0.min(t1);
+                if tmin < 0.0 {
+                    tmin = t0.max(t1);
+                }
+                let pt = r.point_at(tmin);
+                if tmin > 0.0 && tmin < r.tmax {
+                    return Some((pt, (pt - *center) / *radius, tmin, *material_id));
+                }
+
+                None
             }
             Shape::Arc {
                 radius,
@@ -407,28 +485,107 @@ enum Material {
         reflection_color: SPD,
         emission_color: SPD,
     },
-    DirectionalLight {
+    DiffuseDirectionalLight {
         reflection_color: SPD,
         emission_color: SPD,
-        direction: Vec2,
+        direction: f32,
         radius: f32,
     },
 }
 
 impl Material {
-    pub fn sample_le(&self, point: Point2, lambda: f32) -> (Vec2, f32) {
+    pub fn bsdf(&self, lambda: f32, wi: Vec2, wo: Vec2) -> (f32, f32) {
+        match self {
+            Material::DiffuseLight {
+                reflection_color, ..
+            } => {
+                let cos = wo.y().abs();
+                let f = reflection_color.evaluate(lambda);
+                if wi.y() * wo.y() > 0.0 {
+                    (f * cos, cos / PI)
+                } else {
+                    (0.0, 0.0)
+                }
+            }
+            Material::DiffuseDirectionalLight {
+                reflection_color, ..
+            } => {
+                let cos = wo.y().abs();
+                let f = reflection_color.evaluate(lambda);
+                if wi.y() * wo.y() > 0.0 {
+                    (f * cos, cos / PI)
+                } else {
+                    (0.0, 0.0)
+                }
+            }
+            Material::Lambertian { color } => {
+                let cos = wo.y().abs();
+                let f = color.evaluate(lambda);
+                if wi.y() * wo.y() > 0.0 {
+                    (f * cos, cos / PI)
+                } else {
+                    (0.0, 0.0)
+                }
+            }
+            Material::GGX {
+                eta,
+                kappa,
+                roughness,
+            } => panic!(),
+        }
+    }
+    pub fn sample_bsdf(&self, lambda: f32, wi: Vec2) -> (Vec2, f32, f32) {
+        match self {
+            Material::DiffuseLight { .. } => {
+                let y = 1.0 - random::<f32>().powi(2);
+                let x = (random::<f32>() - 0.5).signum() * (1.0 - y.powi(2)).sqrt();
+
+                let wo = Vec2::new(x, y) * wi.y().signum();
+                let (f, pdf) = self.bsdf(lambda, wi, wo);
+                (wo, f, pdf)
+            }
+            Material::DiffuseDirectionalLight { .. } => {
+                let y = 1.0 - random::<f32>().powi(2);
+                let x = (random::<f32>() - 0.5).signum() * (1.0 - y.powi(2)).sqrt();
+
+                let wo = Vec2::new(x, y) * wi.y().signum();
+                let (f, pdf) = self.bsdf(lambda, wi, wo);
+                (wo, f, pdf)
+            }
+            Material::Lambertian { .. } => {
+                let y = 1.0 - random::<f32>().powi(2);
+                let x = (random::<f32>() - 0.5).signum() * (1.0 - y.powi(2)).sqrt();
+
+                let wo = Vec2::new(x, y) * wi.y().signum();
+                let (f, pdf) = self.bsdf(lambda, wi, wo);
+                (wo, f, pdf)
+            }
+            Material::GGX {
+                eta,
+                kappa,
+                roughness,
+            } => panic!(),
+        }
+    }
+    pub fn sample_le(&self, lambda: f32, point: Point2) -> (Vec2, f32) {
         match self {
             Material::DiffuseLight { emission_color, .. } => {
                 let phi = random::<f32>() * TAU;
                 let (sin, cos) = phi.sin_cos();
                 (Vec2::new(cos, sin), emission_color.evaluate_power(lambda))
             }
-            Material::DirectionalLight {
+            Material::DiffuseDirectionalLight {
                 emission_color,
                 direction,
                 radius,
                 ..
-            } => (Vec2::ZERO, 0.0),
+            } => {
+                let phi = (2.0 * random::<f32>() - 1.0) * radius;
+                let e = emission_color.evaluate_power(lambda);
+                let true_direction = direction + phi;
+                let (s, c) = true_direction.sin_cos();
+                (Vec2::new(c, s), e)
+            }
             Material::Lambertian { .. } | Material::GGX { .. } => {
                 panic!()
             }
@@ -448,7 +605,7 @@ impl Scene {
         for (i, shape) in shapes.iter().enumerate() {
             let mat = &materials[shape.get_material_id()];
             match &mat {
-                Material::DiffuseLight { .. } | Material::DirectionalLight { .. } => {
+                Material::DiffuseLight { .. } | Material::DiffuseDirectionalLight { .. } => {
                     lights.push(i);
                 }
                 _ => {}
@@ -488,7 +645,7 @@ impl Scene {
 }
 
 fn main() {
-    let threads = 22;
+    let threads = 1;
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .build_global()
@@ -526,14 +683,23 @@ fn main() {
     };
     let glass_eta = SPD::Cauchy { a: 1.4, b: 10000.0 };
     let scene = Scene::new(
-        vec![Shape::Point {
-            p: Point2::new(0.0, 0.0),
-            material_id: 0,
-        }],
         vec![
-            Material::DiffuseLight {
+            Shape::Point {
+                p: Point2::new(-0.49, 0.0),
+                material_id: 0,
+            },
+            Shape::Circle {
+                radius: 0.1,
+                center: Point2::ORIGIN,
+                material_id: 1,
+            },
+        ],
+        vec![
+            Material::DiffuseDirectionalLight {
                 reflection_color: white.clone(),
                 emission_color: white.clone(),
+                direction: (0.0f32).to_radians(),
+                radius: 0.3,
             },
             Material::Lambertian {
                 color: white.clone(),
@@ -545,32 +711,36 @@ fn main() {
             },
         ],
     );
-    let view_bounds = Bounds2D::new(Bounds1D::new(-0.1, 0.1), Bounds1D::new(-0.1, 0.1));
+    let view_bounds = Bounds2D::new(Bounds1D::new(-0.5, 0.5), Bounds1D::new(-0.5, 0.5));
     let (box_width, box_height) = (
         view_bounds.x.span() / width as f32,
         view_bounds.y.span() / height as f32,
     );
     let mut max_bounces = 4;
     let mut exposure_bias = 10.0;
-    let mut new_rays_per_frame = 100;
+    let mut new_rays_per_frame = 1000;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let keys = window.get_keys_pressed(KeyRepeat::No);
-
+        let keys = window.get_keys_pressed(KeyRepeat::Yes);
+        let config_move = if window.is_key_down(Key::NumPadPlus) {
+            1.0
+        } else if window.is_key_down(Key::NumPadMinus) {
+            -1.0
+        } else {
+            0.0
+        };
         for key in keys.unwrap_or(vec![]) {
-            let config_move = if window.is_key_pressed(Key::NumPadPlus, KeyRepeat::Yes) {
-                1.0
-            } else if window.is_key_pressed(Key::NumPadMinus, KeyRepeat::Yes) {
-                -1.0
-            } else {
-                0.0
-            };
             match key {
                 Key::E => {
                     exposure_bias += config_move;
+                    println!("new exposure bias is {}", exposure_bias);
                 }
                 Key::B => {
                     max_bounces = (max_bounces + config_move as i32).max(0);
+                    println!("new max bounces is {}", max_bounces);
+                }
+                Key::Space => {
+                    film.buffer.fill(XYZColor::BLACK);
                 }
                 _ => {}
             }
@@ -580,13 +750,13 @@ fn main() {
 
         let mut rays: Vec<(Ray2D, f32, f32, bool)> = (0usize..new_rays_per_frame)
             .into_par_iter()
-            .map(|i| {
+            .map(|_| {
                 let lambda =
                     random::<f32>() * BOUNDED_VISIBLE_RANGE.span() + BOUNDED_VISIBLE_RANGE.lower;
                 let light_shape = scene.sample_light();
                 let point = light_shape.sample_surface();
                 let light_mat = scene.get_material(light_shape.get_material_id());
-                let (wo, energy) = light_mat.sample_le(point, lambda);
+                let (wo, energy) = light_mat.sample_le(lambda, point);
                 (Ray2D::new(point, wo), lambda, energy, true)
             })
             .collect();
@@ -598,89 +768,74 @@ fn main() {
                 .filter_map(|(r, lambda, throughput, active)| {
                     if *active {
                         let intersection = scene.intersect(*r);
+                        assert!(
+                            !throughput.is_nan(),
+                            "{:?} {:?}, {:?}",
+                            r,
+                            lambda,
+                            throughput
+                        );
+                        let origin = r.origin;
                         let shading_color =
                             XYZColor::from_wavelength_and_energy(*lambda, *throughput);
                         let point = match intersection {
                             Some((point, normal, material_id)) => {
                                 let mat = scene.get_material(material_id);
-                                point
+                                let frame = TangentFrame2D::from_normal(normal);
+                                let wi = frame.to_local(&-r.direction);
+                                let (wo, bsdf_f, bsdf_pdf) = mat.sample_bsdf(*lambda, wi);
+
+                                if bsdf_pdf == 0.0 || bsdf_f == 0.0 {
+                                    *active = false;
+                                    point
+                                } else {
+                                    *throughput *= bsdf_f * wi.y().abs() / bsdf_pdf;
+                                    let dir = frame.to_world(&wo).normalized();
+                                    *r =
+                                        Ray2D::new(point + normal * 0.00001 * wo.y().signum(), dir);
+                                    point
+                                }
                             }
                             None => {
                                 // exit scene. compute clip bounds.
                                 let mut min_t = f32::INFINITY;
                                 match r.direction.x() {
-                                    dx if dx > 0.0 => min_t = min_t.min(view_bounds.x.upper / dx),
-                                    dx if dx < 0.0 => min_t = min_t.min(view_bounds.x.lower / dx),
+                                    dx if dx > 0.0 => {
+                                        min_t = min_t.min((view_bounds.x.upper - r.origin.x()) / dx)
+                                    }
+                                    dx if dx < 0.0 => {
+                                        min_t = min_t.min((view_bounds.x.lower - r.origin.x()) / dx)
+                                    }
                                     _ => {
                                         // up or down clip bounds will be computed in other match statement
                                     }
                                 }
                                 match r.direction.y() {
-                                    dy if dy > 0.0 => min_t = min_t.min(view_bounds.y.upper / dy),
-                                    dy if dy < 0.0 => min_t = min_t.min(view_bounds.y.lower / dy),
+                                    dy if dy > 0.0 => {
+                                        min_t = min_t.min((view_bounds.y.upper - r.origin.y()) / dy)
+                                    }
+                                    dy if dy < 0.0 => {
+                                        min_t = min_t.min((view_bounds.y.lower - r.origin.y()) / dy)
+                                    }
                                     _ => {
                                         // left or right clip bounds should have been computed in other match statement.
                                         assert!(r.direction.x() != 0.0);
                                     }
                                 }
+                                *active = false;
                                 r.point_at(min_t)
                             }
                         };
-                        Some((r.origin, point, shading_color))
+                        Some((origin, point, shading_color))
                     } else {
                         None
                     }
                 })
                 .collect();
             lines.extend(new_lines.drain(..));
-            // new_lines
-            //     .par_chunks(new_lines.len() / threads)
-            //     .map(|lines_slice| {
-            //         let mut local_film = Film::new(width, height, XYZColor::BLACK);
-            //     })
-            //     .fold_with(Film::new(width, height, XYZColor::BLACK), |film1, film2| {
-            //         film1
-            //             .par_iter_mut()
-            //             .enumerate()
-            //             .for_each(|(i, e)| *e += film2.buffer[i])
-            //     });
-            // tiny box filter, of size 1 / width, 1 / height
-            // transform to 'real' coordinates
         }
 
-        // film.buffer.par_iter_mut().enumerate().for_each(|(i, e)| {
-        //     let (px, py) = (i % width, i / width);
-        //     let (rx, ry) = (
-        //         // 'real' x and y
-        //         view_bounds.x.lower + view_bounds.x.span() * px as f32 / width as f32,
-        //         view_bounds.y.lower + view_bounds.y.span() * py as f32 / height as f32,
-        //     );
-        //     for line in lines.iter() {
-        //         // compute intersection with box lines
-        //         let delta_x = line.1.x() - line.0.x();
-        //         let delta_y = line.1.y() - line.0.y();
-        //         let tx = f32x2::new(rx / delta_x, (rx + box_width) / delta_x);
-        //         let ty = f32x2::new(ry / delta_y, (ry + box_height) / delta_y);
-
-        //         let ys_for_tx = tx * delta_x;
-        //         let xs_for_ty = ty * delta_y;
-        //         if (ys_for_tx.ge(f32x2::splat(ry / delta_y))
-        //             & ys_for_tx.le(f32x2::splat((ry + box_height) / delta_y)))
-        //         .any()
-        //         {
-        //             *e += line.2;
-        //         } else if (xs_for_ty.ge(f32x2::splat(rx / delta_x))
-        //             & xs_for_ty.le(f32x2::splat((rx + box_width) / delta_x)))
-        //         .any()
-        //         {
-        //             *e += line.2;
-        //         }
-        //     }
-        // });
         for line in lines.drain(..) {
-            // let delta_x = WINDOW_WIDTH as f32 * (line.1.x() - line.0.x()) / view_bounds.x.span();
-            // let delta_y = WINDOW_HEIGHT as f32 * (line.1.y() - line.0.y()) / view_bounds.y.span();
-
             let (px0, py0) = (
                 (WINDOW_WIDTH as f32 * (line.0.x() - view_bounds.x.lower) / view_bounds.x.span())
                     as usize,
@@ -696,6 +851,13 @@ fn main() {
 
             let (dx, dy) = (px1 as isize - px0 as isize, py1 as isize - py0 as isize);
             let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+            if dx == 0 && dy == 0 {
+                if px0 as usize >= WINDOW_WIDTH || py0 as usize >= WINDOW_HEIGHT {
+                    continue;
+                }
+                film.buffer[py0 as usize * width + px0 as usize] += line.2;
+                continue;
+            }
             for (x, y) in line_drawing::Midpoint::<f32, isize>::new(
                 (px0 as f32, py0 as f32),
                 (px1 as f32, py1 as f32),
@@ -703,14 +865,9 @@ fn main() {
                 if x as usize >= WINDOW_WIDTH || y as usize >= WINDOW_HEIGHT {
                     continue;
                 }
+                assert!(!b.is_nan(), "{} {}", dx, dy);
                 film.buffer[y as usize * width + x as usize] += line.2 * b;
             }
-
-            // // compute intersections with successive grid lines, starting from (x0, y0)
-            // let delta_t = (1.0 / dx as f32).min(1.0 / dy as f32);
-            // let mut t = 0.0;
-            // let (mut px, mut py) = (px0, py0);
-            // while t < 1.0 {}
         }
 
         let srgb_tonemapper = sRGB::new(&film, exposure_bias);
