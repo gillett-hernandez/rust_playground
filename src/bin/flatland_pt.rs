@@ -2,6 +2,7 @@
 extern crate line_drawing;
 extern crate minifb;
 
+use curves::{load_ior_and_kappa, load_multiple_csv_rows};
 use lib::*;
 use minifb::*;
 
@@ -986,39 +987,88 @@ fn main() {
         bounds: EXTENDED_VISIBLE_RANGE,
         mode: InterpolationMode::Linear,
     };
+    let cornell_colors = load_multiple_csv_rows(
+        "data/curves/physical/cornell.csv",
+        3,
+        InterpolationMode::Cubic,
+        |x| x,
+        |y| y,
+    )
+    .expect("data/curves/csv/cornell.csv was not formatted correctly");
+    let mut iter = cornell_colors.iter();
+    let (cornell_white, cornell_green, cornell_red) = (
+        iter.next().unwrap().clone(),
+        iter.next().unwrap().clone(),
+        iter.next().unwrap().clone(),
+    );
     let black = SPD::Linear {
         signal: vec![0.0],
         bounds: EXTENDED_VISIBLE_RANGE,
         mode: InterpolationMode::Linear,
     };
     let glass_eta = SPD::Cauchy { a: 1.5, b: 10000.0 };
+    let (gold_ior, gold_kappa) =
+        load_ior_and_kappa("data/curves/physical/gold.csv", |x: f32| x * 1000.0).unwrap();
     let scene = Scene::new(
         vec![
             Shape::Point {
-                p: Point2::new(-0.29, 0.09),
+                p: Point2::new(0.0, -0.09),
                 material_id: 0,
+            },
+            Shape::Circle {
+                radius: 100.0,
+                center: Point2::new(0.0, 100.5),
+                material_id: 1,
+            },
+            Shape::Circle {
+                radius: 100.0,
+                center: Point2::new(0.0, -100.5),
+                material_id: 1,
+            },
+            Shape::Circle {
+                radius: 100.0,
+                center: Point2::new(100.5, 0.0),
+                material_id: 2,
+            },
+            Shape::Circle {
+                radius: 100.0,
+                center: Point2::new(-100.5, 0.0),
+                material_id: 3,
             },
             Shape::Circle {
                 radius: 0.1,
                 center: Point2::ORIGIN,
-                material_id: 2,
+                material_id: 4,
             },
         ],
         vec![
-            Material::DiffuseLight {
+            Material::DiffuseDirectionalLight {
                 reflection_color: white.clone(),
                 emission_color: white.clone(),
-                // direction: (0.0f32).to_radians(),
-                // radius: 1.0,
+                direction: (30.0f32).to_radians(),
+                radius: 0.4,
             },
             Material::Lambertian {
-                color: white.clone(),
+                color: cornell_white.clone(),
+            },
+            Material::Lambertian {
+                color: cornell_green.clone(),
+            },
+            Material::Lambertian {
+                color: cornell_red.clone(),
             },
             Material::GGX {
                 eta: glass_eta,
                 kappa: black,
                 roughness: 0.01,
                 permeable: true,
+                eta_o: 1.01,
+            },
+            Material::GGX {
+                eta: gold_ior,
+                kappa: gold_kappa,
+                roughness: 0.01,
+                permeable: false,
                 eta_o: 1.01,
             },
         ],
