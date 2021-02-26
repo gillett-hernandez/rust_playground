@@ -12,6 +12,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOption
 use packed_simd::{f32x2, f32x4};
 use rand::prelude::*;
 use rayon::prelude::*;
+use spectral::{BOUNDED_VISIBLE_RANGE, EXTENDED_VISIBLE_RANGE};
 use std::{
     f32::consts::{PI, TAU},
     ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -1023,7 +1024,7 @@ fn main() {
         ],
     );
     let view_bounds = Bounds2D::new(Bounds1D::new(-0.5, 0.5), Bounds1D::new(-0.5, 0.5));
-    let (box_width, box_height) = (
+    let (_box_width, _box_height) = (
         view_bounds.x.span() / width as f32,
         view_bounds.y.span() / height as f32,
     );
@@ -1067,8 +1068,7 @@ fn main() {
         let mut rays: Vec<(Ray2D, f32, f32, bool)> = (0usize..new_rays_per_frame)
             .into_par_iter()
             .map(|_| {
-                let lambda =
-                    random::<f32>() * BOUNDED_VISIBLE_RANGE.span() + BOUNDED_VISIBLE_RANGE.lower;
+                let lambda = BOUNDED_VISIBLE_RANGE.sample(random::<f32>());
                 let light_shape = scene.sample_light();
                 let point = light_shape.sample_surface();
                 let light_mat = scene.get_material(light_shape.get_material_id());
@@ -1093,7 +1093,7 @@ fn main() {
                         );
                         let origin = r.origin;
                         let shading_color =
-                            XYZColor::from_wavelength_and_energy(*lambda, *throughput);
+                            XYZColor::from(SingleWavelength::new(*lambda, (*throughput).into()));
                         let point = match intersection {
                             Some((point, normal, material_id)) => {
                                 let mat = scene.get_material(material_id);

@@ -18,8 +18,8 @@ use rand::prelude::*;
 use random::random_cosine_direction;
 use rayon::prelude::*;
 
+use spectral::BOUNDED_VISIBLE_RANGE;
 use tonemap::{sRGB, Tonemapper};
-
 
 enum Mode {
     Texture,
@@ -643,7 +643,7 @@ fn main() {
                 let py = i / width;
 
                 let (mut successes, mut attempts) = (0, 0);
-                let lambda = wavelength_bounds.span() * random::<f32>() + wavelength_bounds.lower;
+                let lambda = wavelength_bounds.sample(random::<f32>());
 
                 let central_point = Point3::new(
                     ((px as f32 + 0.5) / width as f32 - 0.5) * sensor_size,
@@ -760,7 +760,8 @@ fn main() {
                             Mode::Texture => {
                                 let m = textures[0].eval_at(lambda, uv);
                                 let energy = tau * m * 3.0;
-                                *pixel += XYZColor::from_wavelength_and_energy(lambda, energy);
+                                *pixel +=
+                                    XYZColor::from(SingleWavelength::new(lambda, energy.into()));
                             }
                             // // spot light based
                             Mode::PinLight => {
@@ -775,7 +776,8 @@ fn main() {
                                     0.0
                                 };
                                 let energy = tau * m * 3.0;
-                                *pixel += XYZColor::from_wavelength_and_energy(lambda, energy);
+                                *pixel +=
+                                    XYZColor::from(SingleWavelength::new(lambda, energy.into()));
                             }
                             Mode::Direction => {
                                 *pixel = XYZColor::new(

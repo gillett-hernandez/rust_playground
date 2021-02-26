@@ -1,4 +1,4 @@
-use crate::math::{Sample1D, Sample2D, Sample3D, Vec3};
+use math::{Sample1D, Sample2D, Sample3D, Vec3};
 use std::f32::consts::PI;
 
 pub fn random_on_unit_sphere(r: Sample2D) -> Vec3 {

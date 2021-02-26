@@ -8,6 +8,7 @@ pub mod trace;
 
 pub use film::Film;
 pub use parse::*;
+pub use rand::prelude::*;
 pub use trace::*;
 
 use nalgebra::{Matrix3, Vector3};

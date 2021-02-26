@@ -1,7 +1,7 @@
 #![allow(unused, unused_imports)]
 
 use crate::film::Film;
-use crate::math::XYZColor;
+use math::XYZColor;
 
 extern crate exr;
 use exr::prelude::rgba_image::*;

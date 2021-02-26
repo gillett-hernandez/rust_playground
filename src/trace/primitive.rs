@@ -1,4 +1,4 @@
-use crate::math::{Point3, Ray, Vec3};
+use math::{Point3, Ray, Vec3};
 #[derive(Copy, Clone, Debug)]
 pub struct SurfaceIntersectionData {
     pub time: f32,

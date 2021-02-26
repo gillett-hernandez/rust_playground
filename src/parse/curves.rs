@@ -1,6 +1,7 @@
 extern crate serde;
 
-use crate::trace::math::*;
+use math::spectral::EXTENDED_VISIBLE_RANGE;
+use math::*;
 
 use std::error::Error;
 use std::fs::File;

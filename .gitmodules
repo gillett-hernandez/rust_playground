@@ -1,0 +1,3 @@
+[submodule "crates/math"]
+	path = crates/math
+	url = git@github.com:gillett-hernandez/rust_cg_math.git

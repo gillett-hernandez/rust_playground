@@ -1,7 +1,6 @@
-use crate::math::{Point3, Ray, Sample2D, SpectralPowerDistributionFunction, Vec3, SPD};
-use crate::{
-    math::{Sample1D, TangentFrame},
-    random::random_cosine_direction,
+use crate::random::random_cosine_direction;
+use math::{
+    Point3, Ray, Sample1D, Sample2D, SpectralPowerDistributionFunction, TangentFrame, Vec3, SPD,
 };
 use std::f32::consts::PI;
 pub trait Material {
