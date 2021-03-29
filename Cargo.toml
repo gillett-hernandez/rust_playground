@@ -45,10 +45,6 @@ name = "lib"
 path = "src/lib.rs"
 
 # [[bin]]
-# name = "splat"
-# path = "src/bin/splat.rs"
-
-# [[bin]]
 # name = "splat_v2"
 # path = "src/bin/splat_v2.rs"
 
