@@ -110,13 +110,13 @@ fn main() {
 
     for _ in 0..10000 {
         let mut ant = Ant::new(0.008, 0.4, 0.0005, 0.4, 0.05);
-        let r = random::<f32>().sqrt() * 0.3;
+        let r = random::<f32>().sqrt() * 0.04;
         let phi = random::<f32>() * TAU;
         let (y, x) = phi.sin_cos();
         ant.x = 0.5 + x * r;
         ant.y = 0.5 + y * r;
-        // ant.angle = (random::<f32>() - 0.5) * TAU;
-        ant.angle = -phi;
+        ant.angle = (random::<f32>() - 0.5) * 0.1;
+        // ant.angle = -phi;
         colony.push(ant);
     }
 
