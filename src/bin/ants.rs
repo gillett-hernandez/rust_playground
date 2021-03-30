@@ -77,8 +77,12 @@ impl Ant {
     }
 }
 
-fn tonemap_greyscale(input: f32) -> u8 {
-    ((1.0 - (-input).exp()) * 255.0) as u8
+fn tonemap_greyscale(input: f32) -> f32 {
+    (1.0 - (-input).exp())
+}
+
+fn crush(input: f32) -> u8 {
+    (input.clamp(0.0, 1.0) * 255.0) as u8
 }
 
 fn main() {
@@ -110,13 +114,13 @@ fn main() {
 
     for _ in 0..10000 {
         let mut ant = Ant::new(0.008, 0.4, 0.0005, 0.4, 0.05);
-        let r = random::<f32>().sqrt() * 0.04;
+        let r = random::<f32>().sqrt() * 0.2;
         let phi = random::<f32>() * TAU;
         let (y, x) = phi.sin_cos();
         ant.x = 0.5 + x * r;
         ant.y = 0.5 + y * r;
-        ant.angle = (random::<f32>() - 0.5) * 0.1;
-        // ant.angle = -phi;
+        // ant.angle = (random::<f32>() - 0.5) * 0.1;
+        ant.angle = phi + PI / 2.0 + PI / 4.0;
         colony.push(ant);
     }
 
@@ -125,8 +129,9 @@ fn main() {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         buffer.fill(0u32);
+
+        // ants update step
         swap.par_iter_mut().enumerate().for_each(|(idx, ant)| {
-            // find neighbors in perception radius
             *ant = colony[idx];
 
             ant.steer(&pheromone_buffer);
@@ -151,6 +156,8 @@ fn main() {
                 ant.angle = (-ant.angle.sin()).atan2(ant.angle.cos());
             }
         });
+
+        // pheromone_buffer update step
         let mut avg_pheromone = 0.0f32;
         let mut max_pheromone = 0.0f32;
         for ant in colony.iter() {
@@ -168,6 +175,7 @@ fn main() {
         avg_pheromone /= pheromone_buffer.len() as f32;
         // println!("{}", max_pheromone);
 
+        // apply blur kernel to pheromone buffer
         pheromone_swap
             .par_iter_mut()
             .enumerate()
@@ -186,6 +194,16 @@ fn main() {
                         if idx < 0 || idx as usize >= pheromone_buffer.len() {
                             continue;
                         }
+
+                        if *dx > 0 {
+                            if (px + dx) % (WINDOW_WIDTH as isize) < px {
+                                continue;
+                            }
+                        } else if *dx < 0 {
+                            if (px + dx) % (WINDOW_WIDTH as isize) > px {
+                                continue;
+                            }
+                        }
                         // contribution from other cells
                         s += pheromone_buffer[idx as usize] * spread_factor;
                     }
@@ -197,12 +215,14 @@ fn main() {
         std::mem::swap(&mut pheromone_buffer, &mut pheromone_swap);
 
         for (i, pixel) in buffer.iter_mut().enumerate() {
-            let c = tonemap_greyscale(10.0 * pheromone_buffer[i] / max_pheromone);
+            let pheromone_scalar = tonemap_greyscale(10.0 * pheromone_buffer[i] / max_pheromone);
 
-            *pixel = rgb_to_u32(c, c, c);
+            *pixel = rgb_to_u32(
+                crush(pheromone_scalar),
+                crush(pheromone_scalar),
+                crush(pheromone_scalar),
+            );
         }
-
-        // apply blur kernel to pheromone buffer
 
         std::mem::swap(&mut colony, &mut swap);
         window
