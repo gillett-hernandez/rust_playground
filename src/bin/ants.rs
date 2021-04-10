@@ -176,12 +176,12 @@ fn main() {
 
     let mut colony: Vec<Ant> = Vec::new();
 
-    let conservation_factor = f32x4::new(0.8, 0.9, 0.7, 0.7);
+    let conservation_factor = f32x4::new(0.9, 0.9, 0.7, 0.7);
     let spread_factor: f32x4 = (1.0 - conservation_factor) / 8.0;
-    let evaporation_factor = f32x4::new(0.99, 0.999, 0.5, 0.99);
+    let evaporation_factor = f32x4::new(0.999, 0.999, 0.5, 0.99);
 
     for _ in 0..10000 {
-        let mut ant = Ant::new(0.008, 0.5, 0.0005, 0.7, 0.05);
+        let mut ant = Ant::new(0.008, 0.3, 0.0005, 0.3, 0.05);
         let r = random::<f32>().sqrt() * 0.03;
         let phi = random::<f32>() * TAU;
         let (y, x) = phi.sin_cos();
@@ -212,6 +212,11 @@ fn main() {
 
     let mut selected_view = 0;
 
+    // pheromone_buffer update step
+    let mut avg_pheromone = f32x4::splat(0.0);
+    let mut max_pheromone = f32x4::splat(0.0);
+    let update_heat = 0.99f32;
+
     while window.is_open() && !window.is_key_down(Key::Escape) {
         buffer.fill(0u32);
 
@@ -232,7 +237,7 @@ fn main() {
 
                 // check food locations and grab food if within region
                 for (idx, food_deposit) in food_deposits.iter().enumerate() {
-                    if food_deposit.contains(ant.x, ant.y) {
+                    if food_deposit.contains(ant.x, ant.y) && food_deposit.count > 0 {
                         ant.state = AntState::Foraging;
                         ant.angle += PI;
                         ant.angle %= TAU;
@@ -300,9 +305,8 @@ fn main() {
             }
         }
 
-        // pheromone_buffer update step
-        let mut avg_pheromone = f32x4::splat(0.0);
-        let mut max_pheromone = f32x4::splat(0.0);
+        let mut local_avg_pheromone = f32x4::splat(0.0);
+        let mut local_max_pheromone = f32x4::splat(0.0);
         for ant in colony.iter() {
             let (px, py) = (
                 (ant.x * WINDOW_WIDTH as f32) as usize,
@@ -315,7 +319,9 @@ fn main() {
             max_pheromone = max_pheromone.max(pheromone_buffer[py * WINDOW_WIDTH + px]);
             avg_pheromone += pheromone_buffer[py * WINDOW_WIDTH + px];
         }
-        avg_pheromone /= pheromone_buffer.len() as f32;
+        local_avg_pheromone /= pheromone_buffer.len() as f32;
+        avg_pheromone = avg_pheromone * update_heat + (1.0 - update_heat) * local_avg_pheromone;
+        max_pheromone = max_pheromone * update_heat + (1.0 - update_heat) * local_max_pheromone;
         // println!("{}", max_pheromone);
 
         // apply blur kernel to pheromone buffer
@@ -365,13 +371,13 @@ fn main() {
 
             *pixel = rgb_to_u32(
                 crush(tonemap_greyscale(
-                    pheromone_buffer[i].extract(0) / max_pheromone.extract(0),
+                    10.0 * pheromone_buffer[i].extract(0) / max_pheromone.extract(0),
                 )),
                 crush(tonemap_greyscale(
-                    pheromone_buffer[i].extract(1) / max_pheromone.extract(1),
+                    10.0 * pheromone_buffer[i].extract(1) / max_pheromone.extract(1),
                 )),
                 crush(tonemap_greyscale(
-                    pheromone_buffer[i].extract(2) / max_pheromone.extract(2),
+                    100.0 * pheromone_buffer[i].extract(2) / max_pheromone.extract(2),
                 )),
             );
         }

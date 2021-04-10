@@ -3,6 +3,7 @@ pub mod camera;
 pub mod lens;
 pub mod material;
 
+pub mod flatland;
 pub mod primitive;
 pub mod random;
 pub mod tonemap;
