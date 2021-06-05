@@ -234,7 +234,7 @@ fn main() {
             events.push(e);
         }
     }
-    events.extend(new_events.drain(..));
+    events.append(&mut new_events);
     events.push((-1.0, t + frame_dt, 0, None));
     let mut mean_free_path = 0.0;
     let mut mean_pressure = 0.0;
@@ -515,7 +515,7 @@ fn main() {
                         particle_particle_check(t, *idx, check_i, particle, other)
                     })
                     .collect();
-                events.extend(new_events.drain(..));
+                events.append(&mut new_events);
             }
 
             // check collisions with walls for i and j

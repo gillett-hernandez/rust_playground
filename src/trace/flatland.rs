@@ -1,16 +1,14 @@
 #[allow(unused_imports)]
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 
-use crate::parse::curves::{load_ior_and_kappa, load_multiple_csv_rows};
-use crate::spectral::{
-    SpectralPowerDistributionFunction, BOUNDED_VISIBLE_RANGE, EXTENDED_VISIBLE_RANGE, SPD,
-};
-use crate::tonemap::{sRGB, Tonemapper};
-use math::{Vec3, XYZColor};
+// use crate::parse::curves::{load_ior_and_kappa, load_multiple_csv_rows};
+use crate::spectral::{SpectralPowerDistributionFunction, SPD};
+// use crate::tonemap::{sRGB, Tonemapper};
+use math::Vec3;
 
 use packed_simd::{f32x2, f32x4};
 use rand::prelude::*;
-use rayon::prelude::*;
+// use rayon::prelude::*;
 use std::{
     f32::consts::{PI, TAU},
     ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -299,7 +297,7 @@ impl AABB2D {
 
         AABB2D(f32x4::new(x1, y1, x2, y2))
     }
-    pub fn intersect(ray: Ray2D, tmax: f32) -> Point2 {
+    pub fn intersect(_ray: Ray2D, _tmax: f32) -> Point2 {
         // compute 4 intersection points
         Point2::ZERO
     }
@@ -602,22 +600,27 @@ impl Shape {
     pub fn sample_surface(&self) -> Point2 {
         match self {
             Shape::Point { p, .. } => *p,
-            Shape::Circle { radius, center, .. } => *center,
+            Shape::Circle {
+                radius: _, center, ..
+            } => *center,
             Shape::Arc {
-                radius,
+                radius: _,
                 center,
-                normal,
-                angle,
+                normal: _,
+                angle: _,
                 ..
             } => *center,
-            Shape::Line { p0, p1, .. } => *p0,
+            Shape::Line { p0, p1: _, .. } => *p0,
             Shape::Bezier { control, .. } => control[0],
         }
     }
 
     pub fn intersect(&self, r: Ray2D) -> Option<(Point2, Vec2, f32, usize)> {
         match self {
-            Shape::Point { p, material_id } => None,
+            Shape::Point {
+                p: _,
+                material_id: _,
+            } => None,
             Shape::Circle {
                 radius,
                 center,
@@ -644,22 +647,22 @@ impl Shape {
                 None
             }
             Shape::Arc {
-                radius,
-                center,
-                normal,
-                angle,
-                material_id,
+                radius: _,
+                center: _,
+                normal: _,
+                angle: _,
+                material_id: _,
             } => {
                 panic!()
             }
             Shape::Line {
-                p0,
-                p1,
-                material_id,
+                p0: _,
+                p1: _,
+                material_id: _,
             } => {
                 panic!()
             }
-            Shape::Bezier { control, .. } => {
+            Shape::Bezier { control: _, .. } => {
                 panic!()
             }
         }
@@ -785,7 +788,7 @@ impl Material {
 
                         let sqrt_denom = ndotv + eta_rel * ndotl;
                         let eta_rel2 = eta_rel * eta_rel;
-                        let mut dwh_dwo1 = ndotl / (sqrt_denom * sqrt_denom); // dwh_dwo w/o etas
+                        let dwh_dwo1 = ndotl / (sqrt_denom * sqrt_denom); // dwh_dwo w/o etas
                         let dwh_dwo2 = eta_rel2 * dwh_dwo1; // dwh_dwo w/etas
 
                         // match transport_mode {
@@ -852,7 +855,7 @@ impl Material {
             Material::GGX {
                 eta,
                 kappa,
-                roughness,
+                roughness: _,
                 permeable,
                 eta_o,
             } => {
@@ -896,7 +899,7 @@ impl Material {
             }
         }
     }
-    pub fn sample_le(&self, lambda: f32, point: Point2) -> (Vec2, f32) {
+    pub fn sample_le(&self, lambda: f32, _point: Point2) -> (Vec2, f32) {
         match self {
             Material::DiffuseLight { emission_color, .. } => {
                 let phi = random::<f32>() * TAU;

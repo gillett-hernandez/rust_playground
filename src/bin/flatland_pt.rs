@@ -266,7 +266,7 @@ fn main() {
                     }
                 })
                 .collect();
-            lines.extend(new_lines.drain(..));
+            lines.append(&mut new_lines);
         }
 
         for line in lines.drain(..) {

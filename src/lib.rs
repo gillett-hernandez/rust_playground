@@ -1,4 +1,3 @@
-#![feature(slice_fill)]
 #[macro_use]
 extern crate packed_simd;
 

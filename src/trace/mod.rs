@@ -1,6 +1,5 @@
 pub mod camera;
 
-pub mod lens;
 pub mod material;
 
 pub mod flatland;
