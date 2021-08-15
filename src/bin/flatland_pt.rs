@@ -1,4 +1,3 @@
-#![feature(slice_fill)]
 extern crate line_drawing;
 extern crate minifb;
 
@@ -22,6 +21,12 @@ const WINDOW_WIDTH: usize = 800;
 const WINDOW_HEIGHT: usize = 800;
 
 use lib::flatland::*;
+
+enum DrawMode {
+    XiaolinWu,
+    Midpoint,
+    Bresenham,
+}
 
 fn main() {
     let threads = 1;
@@ -149,6 +154,8 @@ fn main() {
     let mut max_bounces = 16;
     let mut exposure_bias = 10.0;
     let mut new_rays_per_frame = 1000;
+
+    let mut draw_mode = DrawMode::XiaolinWu;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let keys = window.get_keys_pressed(KeyRepeat::Yes);
@@ -291,9 +298,9 @@ fn main() {
                 film.buffer[py0 as usize * width + px0 as usize] += line.2;
                 continue;
             }
-            if true {
-                if false {
-                    let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+            let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+            match draw_mode {
+                DrawMode::Midpoint => {
                     for (x, y) in line_drawing::Midpoint::<f32, isize>::new(
                         (px0 as f32, py0 as f32),
                         (px1 as f32, py1 as f32),
@@ -308,8 +315,8 @@ fn main() {
                         assert!(!b.is_nan(), "{} {}", dx, dy);
                         film.buffer[y as usize * width + x as usize] += line.2 * b;
                     }
-                } else {
-                    let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+                }
+                DrawMode::XiaolinWu => {
                     // let b = 1.0f32;
                     for ((x, y), a) in line_drawing::XiaolinWu::<f32, isize>::new(
                         (px0 as f32, py0 as f32),
@@ -326,22 +333,24 @@ fn main() {
                         film.buffer[y as usize * width + x as usize] += line.2 * b * a;
                     }
                 }
-            } else {
-                let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
-
-                for (x, y) in line_drawing::Bresenham::new(
-                    (px0 as isize, py0 as isize),
-                    (px1 as isize, py1 as isize),
-                ) {
-                    if x as usize >= WINDOW_WIDTH || y as usize >= WINDOW_HEIGHT || x < 0 || y < 0 {
-                        continue;
+                DrawMode::Bresenham => {
+                    for (x, y) in line_drawing::Bresenham::new(
+                        (px0 as isize, py0 as isize),
+                        (px1 as isize, py1 as isize),
+                    ) {
+                        if x as usize >= WINDOW_WIDTH
+                            || y as usize >= WINDOW_HEIGHT
+                            || x < 0
+                            || y < 0
+                        {
+                            continue;
+                        }
+                        assert!(!b.is_nan(), "{} {}", dx, dy);
+                        film.buffer[y as usize * width + x as usize] += line.2 * b;
                     }
-                    assert!(!b.is_nan(), "{} {}", dx, dy);
-                    film.buffer[y as usize * width + x as usize] += line.2 * b;
                 }
             }
         }
-
         let srgb_tonemapper = sRGB::new(&film, exposure_bias);
         window_pixels
             .buffer

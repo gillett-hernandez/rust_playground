@@ -1,4 +1,3 @@
-#![feature(slice_fill)]
 extern crate minifb;
 
 use std::f32::consts::SQRT_2;

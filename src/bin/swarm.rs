@@ -1,4 +1,3 @@
-#![feature(slice_fill)]
 extern crate minifb;
 
 use minifb::{Key, Scale, Window, WindowOptions};
