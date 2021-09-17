@@ -3,11 +3,11 @@ extern crate minifb;
 
 use lib::curves::{load_ior_and_kappa, load_multiple_csv_rows};
 use lib::spectral::{
-    InterpolationMode, SpectralPowerDistributionFunction, BOUNDED_VISIBLE_RANGE,
+    InterpolationMode, BOUNDED_VISIBLE_RANGE,
     EXTENDED_VISIBLE_RANGE, SPD,
 };
 use lib::tonemap::{sRGB, Tonemapper};
-use lib::trace::{Bounds1D, Bounds2D, SingleEnergy, SingleWavelength};
+use lib::trace::{Bounds1D, Bounds2D, SingleWavelength};
 use lib::{rgb_to_u32, Film};
 
 use math::XYZColor;
@@ -53,7 +53,7 @@ fn main() {
     let width = film.width;
     let height = film.height;
 
-    let frame_dt = 6944.0 / 1000000.0;
+    // let frame_dt = 6944.0 / 1000000.0;
 
     let white = SPD::Linear {
         signal: vec![1.0],
@@ -155,7 +155,7 @@ fn main() {
     let mut exposure_bias = 10.0;
     let mut new_rays_per_frame = 1000;
 
-    let mut draw_mode = DrawMode::XiaolinWu;
+    let draw_mode = DrawMode::XiaolinWu;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let keys = window.get_keys_pressed(KeyRepeat::Yes);

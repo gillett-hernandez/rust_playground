@@ -13,7 +13,7 @@ num_cpus = "1.13.0"
 serde = { version = "1.0.120", features = ["derive"] }
 rand = "0.8.2"
 image = "0.23.12"
-packed_simd = { version = "0.3.4", package = "packed_simd_2" }
+packed_simd = { version = "0.3.6", package = "packed_simd_2" }
 nalgebra = "0.24"
 crossbeam = "0.8.0"
 parking_lot = "0.11.0"
@@ -27,6 +27,8 @@ math =  { git = "https://github.com/gillett-hernandez/rust_cg_math" }
 # wgpu = "0.7.0"
 winit = "0.24.0"
 line_drawing = "0.8.0"
+structopt = "0.3.22"
+linefeed = "0.6.0"
 
 [build-dependencies]
 serde = { version = "1.0.120", features = ["derive"] }
@@ -43,6 +45,8 @@ opt-level = 0
 [lib]
 name = "lib"
 path = "src/lib.rs"
+
+
 
 # [[bin]]
 # name = "splat_v2"

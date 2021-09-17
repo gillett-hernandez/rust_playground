@@ -102,10 +102,12 @@ pub fn hsv_to_rgb(h: usize, s: f32, v: f32) -> (u8, u8, u8) {
         _ => (0, 0, 0),
     }
 }
+pub fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
+    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+}
 
 pub fn triple_to_u32(triple: (u8, u8, u8)) -> u32 {
-    let c = ((triple.0 as u32) << 16) + ((triple.1 as u32) << 8) + (triple.2 as u32);
-    c
+    rgb_to_u32(triple.0, triple.1, triple.2)
 }
 
 pub fn blit_circle(film: &mut Film<u32>, radius: f32, x: usize, y: usize, c: u32) {
@@ -197,8 +199,4 @@ impl TexStack {
         }
         s
     }
-}
-
-pub fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
-    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }

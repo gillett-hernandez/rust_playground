@@ -65,7 +65,7 @@ fn main() {
     let mut frame = 0;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let srgb_tonemapper = sRGB::new(&film, 1.0);
-        film.buffer.par_iter_mut().enumerate().for_each(|(i, e)| {
+        film.buffer.par_iter_mut().enumerate().for_each(|(_i, e)| {
             if frame < 30 {
                 *e = xyz1;
             } else {
