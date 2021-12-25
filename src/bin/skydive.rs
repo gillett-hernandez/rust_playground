@@ -1,6 +1,6 @@
 extern crate minifb;
 
-use minifb::{Key, Scale, Window, WindowOptions};
+use minifb::{Key, MouseMode, Scale, Window, WindowOptions};
 use rayon::prelude::*;
 
 use lib::{hsv_to_rgb, rgb_to_u32, triple_to_u32};
@@ -45,11 +45,11 @@ impl Diver {
 
         let (aoa_sin, aoa_cos) = angle_of_attack.sin_cos();
         let mag_2 = self.vx * self.vx + self.vy * self.vy;
-        let mul = 10.0 * 0.7 * 1.225 * 0.75 * mag_2 * aoa_sin * aoa_cos / (2.0 * self.mass);
+        let mul = 50.0 * 0.7 * 1.225 * 0.75 * mag_2 * aoa_sin * aoa_cos / (2.0 * self.mass);
         let (tan_sin, tan_cos) = tangent.sin_cos();
         let (lift_x, lift_y) = (mul * tan_cos, mul * tan_sin);
 
-        let f = 0.038;
+        let f = 0.038 + aoa_sin.abs() * 0.1;
 
         let mag = mag_2.sqrt();
         // velocity squared drag
@@ -92,13 +92,17 @@ fn main() {
     let dt = 10.0 * 6944.0 / 1000000.0;
     window.limit_update_rate(Some(std::time::Duration::from_micros(6944)));
 
+    window
+        .update_with_buffer(&buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
+        .unwrap();
+
     let mut divers: Vec<Diver> = Vec::new();
 
     for _ in 0..1000 {
         let mut diver = Diver::new(
             0.0,
             10000.0,
-            30.0 * rand::random::<f32>() + 50.0,
+            50.0 * rand::random::<f32>() + 70.0,
             9.80665,
             triple_to_u32(hsv_to_rgb(
                 (rand::random::<f32>() * 360.0) as usize,
@@ -110,6 +114,7 @@ fn main() {
         diver.angle = rand::random::<f32>() * TAU;
         divers.push(diver);
     }
+
     divers[0].angle = 3.0 * PI / 4.0;
     divers[0].color = rgb_to_u32(255, 0, 0);
 
@@ -119,6 +124,13 @@ fn main() {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         // buffer.fill(0u32);
+        if let Some(mouse_pos) = window.get_mouse_pos(MouseMode::Pass) {
+            let (dx, dy) = (
+                mouse_pos.0 - WINDOW_WIDTH as f32 / 2.0,
+                -(mouse_pos.1 - WINDOW_HEIGHT as f32 / 2.0),
+            );
+            divers[0].angle = dy.atan2(dx) % TAU;
+        }
         swap.par_iter_mut().enumerate().for_each(|(idx, new)| {
             // find neighbors in perception radius
             // update diver angle based on controller, then update forces on diver and speed

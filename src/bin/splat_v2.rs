@@ -23,6 +23,8 @@ use rand::prelude::*;
 use crossbeam::channel::unbounded;
 
 fn main() {
+
+    // multiple light film splatting
     let light_films: Arc<Mutex<Vec<Arc<Mutex<Film<f32x4>>>>>> = Arc::new(Mutex::new(Vec::new()));
     for _ in 0..10 {
         light_films

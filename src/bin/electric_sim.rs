@@ -1,23 +1,9 @@
 use linefeed::{Interface, ReadResult};
 use std::error::Error;
-trait Generator {
-    // fn voltage(&self) -> f32;
+
+trait Component {
 }
 
-trait Consumer {
-    // fn resistance(&self) -> f32;
-}
-
-struct CoalGenerator {}
-
-impl Generator for CoalGenerator {
-    // fn voltage(&self) -> f32 {
-
-    // }
-}
-struct BasicConsumer {}
-
-impl Consumer for BasicConsumer {}
 
 enum Connection {
     Generator(usize),
@@ -33,12 +19,8 @@ struct ConnectorNode {
 // struct
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut generators: Vec<Box<dyn Generator>> = Vec::new();
-    let mut consumers: Vec<Box<dyn Consumer>> = Vec::new();
     let mut connections: Vec<ConnectorNode> = Vec::new();
 
-    generators.push(Box::new(CoalGenerator {}));
-    consumers.push(Box::new(BasicConsumer {}));
     connections.push(ConnectorNode {
         connections: vec![Connection::Generator(0), Connection::Consumer(0)],
     });
