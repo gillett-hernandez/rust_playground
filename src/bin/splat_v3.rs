@@ -10,13 +10,13 @@ use packed_simd::{f32x4, Simd};
 extern crate exr;
 use exr::prelude::rgba_image::*;
 
-use std::io::Write;
+// use std::io::Write;
 
-use std::rc::Rc;
+// use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rayon::prelude::*;
 
@@ -36,18 +36,18 @@ fn main() {
         f32x4::splat(0.0),
     )));
 
-    let num_threads = 10;
+    let num_threads = 1;
 
     let (tx, rx) = unbounded();
     let rx = Arc::new(Mutex::new(rx));
     let mut join_handles = Vec::new();
     let film_width = light_film.lock().unwrap().width;
-    let mut stop_signal = Arc::new(AtomicBool::new(false));
+    let stop_signal = Arc::new(AtomicBool::new(false));
     let clone = light_film.clone();
 
     unsafe {
         let mut txs: Vec<Sender<(usize, Simd<[f32; 4]>)>> = Vec::new();
-        for thread_id in 0..num_threads {
+        for _ in 0..num_threads {
             let arctex = clone.clone();
             let stop_clone = stop_signal.clone();
             let (tx, rx) = unbounded();
@@ -108,14 +108,48 @@ fn main() {
         join_handles.push(dispatch_thread);
     }
 
-    for y in 0..2160usize {
-        for x in 0..2160usize {
-            tx.send((x, y, f32x4::splat(1.0)))
-                .expect("send should have succeeded");
-        }
+    let now = Instant::now();
+
+    (0..100000000).into_par_iter().for_each(|_| {
+        let (x, y) = (
+            (random::<f32>() * 2160.0) as usize,
+            (random::<f32>() * 2160.0) as usize,
+        );
+        // let color
+        let sw = (
+            390.0f32 + random::<f32>() * 370.0f32,
+            random::<f32>() * 10.0f32,
+        );
+        let triplet = sw_to_triplet(sw);
+        tx.send((x, y, triplet))
+            .expect("send should have succeeded");
+    });
+
+    // for _ in 0..100000000 {
+    //     let (x, y) = (
+    //         (random::<f32>() * 2160.0) as usize,
+    //         (random::<f32>() * 2160.0) as usize,
+    //     );
+    //     // let color
+    //     let sw = (
+    //         390.0f32 + random::<f32>() * 370.0f32,
+    //         random::<f32>() * 10.0f32,
+    //     );
+    //     let triplet = sw_to_triplet(sw);
+    //     tx.send((x, y, triplet))
+    //         .expect("send should have succeeded");
+
+    // }
+
+    let duration1 = now.elapsed().as_millis();
+    println!("{}ms for tx", duration1);
+    stop_signal.store(true, Ordering::Relaxed);
+    for join_handle in join_handles {
+        join_handle.join().unwrap();
     }
 
-    stop_signal.store(true, Ordering::Relaxed);
+    let duration2 = now.elapsed().as_millis();
+    println!("{}ms for joining", duration2);
 
     {
         let film = light_film.lock().unwrap();
@@ -132,7 +166,6 @@ fn main() {
                     continue;
                 }
                 if lum > max_luminance {
-                    // println!("max lum {} at ({}, {})", max_luminance, x, y);
                     max_luminance = lum;
                 }
             }
