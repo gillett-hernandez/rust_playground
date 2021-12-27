@@ -22,7 +22,7 @@ use rayon::prelude::*;
 
 use rand::prelude::*;
 
-use crossbeam::channel::{unbounded, Sender};
+use crossbeam::channel::{bounded, Sender};
 
 fn main() {
     // single light film with extremely high performance splatting.
@@ -38,7 +38,7 @@ fn main() {
 
     let num_threads = 1;
 
-    let (tx, rx) = unbounded();
+    let (tx, rx) = bounded(25000);
     let rx = Arc::new(Mutex::new(rx));
     let mut join_handles = Vec::new();
     let film_width = light_film.lock().unwrap().width;
@@ -49,12 +49,16 @@ fn main() {
     for _ in 0..num_threads {
         let arctex = clone.clone();
         let stop_clone = stop_signal.clone();
-        let (tx, rx) = unbounded();
+        let (tx, rx) = bounded(25000);
         unsafe {
             // the only thing guaranteeing no memory corruption occurs is the dispatch thread correctly sending pixels such that no collisions occur.
             let splatting_thread = thread::spawn(move || {
-                let mut ptr = arctex.lock().unwrap();
-                let ptr = ptr.buffer.as_mut_ptr();
+                // let ptr = {
+                //     arctex_guard.buffer.as_mut_ptr()
+                // };
+                let mut arctex_guard = arctex.lock().unwrap();
+                let ptr = arctex_guard.buffer.as_mut_ptr();
+                drop(arctex_guard);
                 let mut ctr = 0;
 
                 loop {
