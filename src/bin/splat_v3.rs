@@ -45,16 +45,18 @@ fn main() {
     let stop_signal = Arc::new(AtomicBool::new(false));
     let clone = light_film.clone();
 
-    unsafe {
-        let mut txs: Vec<Sender<(usize, Simd<[f32; 4]>)>> = Vec::new();
-        for _ in 0..num_threads {
-            let arctex = clone.clone();
-            let stop_clone = stop_signal.clone();
-            let (tx, rx) = unbounded();
+    let mut txs: Vec<Sender<(usize, Simd<[f32; 4]>)>> = Vec::new();
+    for _ in 0..num_threads {
+        let arctex = clone.clone();
+        let stop_clone = stop_signal.clone();
+        let (tx, rx) = unbounded();
+        unsafe {
+            // the only thing guaranteeing no memory corruption occurs is the dispatch thread correctly sending pixels such that no collisions occur.
             let splatting_thread = thread::spawn(move || {
                 let mut ptr = arctex.lock().unwrap();
                 let ptr = ptr.buffer.as_mut_ptr();
                 let mut ctr = 0;
+
                 loop {
                     for (pidx, color) in rx.try_iter() {
                         *ptr.add(pidx) += color;
@@ -74,39 +76,39 @@ fn main() {
             txs.push(tx);
             join_handles.push(splatting_thread);
         }
-
-        let stop_clone = stop_signal.clone();
-        let rx_clone = rx.clone();
-
-        let dispatch_thread = thread::spawn(move || {
-            let mut ctr = 0;
-            let rx = rx_clone.lock().unwrap();
-            loop {
-                for (x, y, color) in rx.try_iter() {
-                    let pidx = y * film_width + x;
-                    let thread_id = pidx % num_threads;
-                    let tx: &Sender<(usize, Simd<[f32; 4]>)> = &txs[thread_id];
-                    tx.send((pidx, color)).unwrap();
-
-                    ctr += 1;
-                }
-                if let Ok((x, y, color)) = rx.recv_timeout(Duration::from_millis(200)) {
-                    let pidx = y * film_width + x;
-                    let thread_id = pidx % num_threads;
-                    let tx: &Sender<(usize, Simd<[f32; 4]>)> = &txs[thread_id];
-                    tx.send((pidx, color)).unwrap();
-                    ctr += 1;
-                    continue; // skip exit branch because we found more data within the time limit.
-                }
-                if stop_clone.load(Ordering::Relaxed) && rx.is_empty() {
-                    println!("stopping dispatch thread after processing {} items", ctr);
-                    break;
-                }
-            }
-        });
-
-        join_handles.push(dispatch_thread);
     }
+
+    let stop_clone = stop_signal.clone();
+    let rx_clone = rx.clone();
+
+    let dispatch_thread = thread::spawn(move || {
+        let mut ctr = 0;
+        let rx = rx_clone.lock().unwrap();
+        loop {
+            for (x, y, color) in rx.try_iter() {
+                let pidx = y * film_width + x;
+                let thread_id = pidx % num_threads;
+                let tx: &Sender<(usize, Simd<[f32; 4]>)> = &txs[thread_id];
+                tx.send((pidx, color)).unwrap();
+
+                ctr += 1;
+            }
+            if let Ok((x, y, color)) = rx.recv_timeout(Duration::from_millis(200)) {
+                let pidx = y * film_width + x;
+                let thread_id = pidx % num_threads;
+                let tx: &Sender<(usize, Simd<[f32; 4]>)> = &txs[thread_id];
+                tx.send((pidx, color)).unwrap();
+                ctr += 1;
+                continue; // skip exit branch because we found more data within the time limit.
+            }
+            if stop_clone.load(Ordering::Relaxed) && rx.is_empty() {
+                println!("stopping dispatch thread after processing {} items", ctr);
+                break;
+            }
+        }
+    });
+
+    join_handles.push(dispatch_thread);
 
     let now = Instant::now();
 
