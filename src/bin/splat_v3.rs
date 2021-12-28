@@ -30,18 +30,21 @@ fn main() {
     // TODO: incorporate pixel filtering into splatting, adjusting the strength of the splat based on where in the pixel the splat is
     // and potentially splatting across multiple pixels. though maybe
 
+    let film_width = 2160;
+    let film_height = 2160;
     let light_film: Arc<Mutex<Film<f32x4>>> = Arc::new(Mutex::new(Film::<f32x4>::new(
-        2160,
-        2160,
+        film_width,
+        film_height,
         f32x4::splat(0.0),
     )));
 
+    let total_pixels = film_width * film_height;
+
     let num_threads = 1;
 
-    let (tx, rx) = bounded(25000);
+    let (tx, rx) = bounded(250000);
     let rx = Arc::new(Mutex::new(rx));
     let mut join_handles = Vec::new();
-    let film_width = light_film.lock().unwrap().width;
     let stop_signal = Arc::new(AtomicBool::new(false));
     let clone = light_film.clone();
 
@@ -49,7 +52,7 @@ fn main() {
     for _ in 0..num_threads {
         let arctex = clone.clone();
         let stop_clone = stop_signal.clone();
-        let (tx, rx) = bounded(25000);
+        let (tx, rx) = bounded(250000);
         unsafe {
             // the only thing guaranteeing no memory corruption occurs is the dispatch thread correctly sending pixels such that no collisions occur.
             let splatting_thread = thread::spawn(move || {
