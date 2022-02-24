@@ -1,12 +1,10 @@
 extern crate line_drawing;
 extern crate minifb;
 
-use lib::curves::{load_ior_and_kappa, load_multiple_csv_rows};
 use lib::flatland::{Point2, Vec2};
-use lib::spectral::{InterpolationMode, BOUNDED_VISIBLE_RANGE, EXTENDED_VISIBLE_RANGE, SPD};
 use lib::tonemap::{sRGB, Tonemapper};
-use lib::trace::{Bounds1D, Bounds2D, SingleWavelength};
-use lib::{rgb_to_u32, Film};
+use lib::trace::{Bounds1D, Bounds2D};
+use lib::{rgb_to_u32, Film, SingleWavelength};
 
 use math::XYZColor;
 #[allow(unused_imports)]
@@ -74,24 +72,30 @@ struct Curve {
 
 impl Curve {
     pub fn from_bezier_list(list: Vec<Bezier>) -> Self {
-        for (bezier0, bezier1) in list.iter().zip(list.iter().take(1)) {
+        for (bezier0, bezier1) in list.iter().zip(list.iter().skip(1)) {
             // beziers should be arranged roughly head to tail.
-            assert!((bezier0.end() - bezier1.beginning()).norm_squared() < 0.00001);
+            assert!(
+                (bezier0.end() - bezier1.beginning()).norm_squared() < 0.00001,
+                "{:?} {:?}",
+                bezier0.end(),
+                bezier1.beginning()
+            );
         }
         Curve { list }
     }
 
     pub fn eval(&self, t: f32) -> Point2 {
         let f32_len = self.list.len() as f32;
+        let t = t.clamp(0.0, 1.0 - f32::EPSILON);
         let bin = (t * f32_len) as usize;
-        let adjusted_t = t - (bin as f32 / f32_len);
+        let adjusted_t = (t - (bin as f32 / f32_len)) * f32_len;
 
-        let mut point = Point2::ZERO;
-        for i in 0..bin {
-            point += Vec2::from_raw(self.list[i].end().0);
-        }
-        point += Vec2::from_raw(self.list[bin].eval(adjusted_t).0);
-        point
+        // let mut point = Point2::ZERO;
+        // for i in 0..bin {
+        //     point += Vec2::from_raw(self.list[i].end().0);
+        // }
+        // let point = self.list[bin].eval(adjusted_t);
+        self.list[bin].eval(adjusted_t)
     }
 
     pub fn eval_vec(&self, t: f32) -> Vec2 {
@@ -117,8 +121,9 @@ impl Path {
         Path {
             fragments: curves
                 .iter()
+                .cloned()
                 .zip(terminators.iter())
-                .map(|(&e0, &e1)| (e0, e1))
+                .map(|(e0, &e1)| (e0, e1))
                 .collect::<Vec<(Curve, f32)>>(),
             current_time: 0.0,
             current_base_position: base_position,
@@ -168,13 +173,30 @@ impl Path {
 }
 
 #[derive(Copy, Clone)]
-struct Scout {}
+struct Scout {
+    pub pos: Point2,
+}
+
 impl Scout {
     pub fn new() -> Self {
-        Scout {}
+        Scout { pos: Point2::ZERO }
     }
 
-    pub fn update(&self, delta: f32) {}
+    pub fn update(&mut self, dv: Vec2) {
+        loop {
+            if random::<f32>() < 0.4 {
+                // 40% chance of going towards the origin
+                self.pos -= (self.pos - Point2::ZERO) * 0.06;
+            } else {
+                break;
+            }
+        }
+        self.pos += dv;
+    }
+
+    pub fn reset(&mut self) {
+        self.pos = Point2::ZERO;
+    }
 }
 
 fn main() {
@@ -237,9 +259,18 @@ fn main() {
 
     let grind_levels = vec![(0.5f32, 1.0f32)];
 
+    let mut path_curves = Vec::new();
+    let mut path_terminators = Vec::new();
     let mut grind_level = 0.0f32;
 
+    path_curves.push(ingredients[0].clone());
+    path_terminators.push(1.0);
+
+    let mut path = Path::new(Point2::ZERO, path_curves.clone(), path_terminators.clone());
+    let mut pos = Point2::ZERO;
+
     let mut scouts = vec![Scout::new(); 1000];
+    let mut scouts_clone = scouts.clone();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let keys = window.get_keys_pressed(KeyRepeat::Yes);
@@ -261,10 +292,19 @@ fn main() {
                 }
                 Key::Space => {
                     // add selected ingredient to the pot (path)
+                    path_curves.push(ingredients[selected_ingredient].clone());
+                    let grind_bounds = grind_levels[selected_ingredient];
+                    path_terminators
+                        .push(Bounds1D::new(grind_bounds.0, grind_bounds.1).lerp(grind_level));
+                    grind_level = 0.0;
+                    scouts.iter_mut().for_each(|e| e.reset());
                 }
                 Key::G => {
                     // grind selected ingredient.
-                    unimplemented!();
+                    grind_level += 0.01;
+                    if grind_level > 1.0 {
+                        grind_level = 1.0;
+                    }
                 }
                 Key::Up => {
                     // move view Up
@@ -285,89 +325,110 @@ fn main() {
                 Key::R => {
                     // reset all scouts
                     scouts.iter_mut().for_each(|e| e.reset());
+                    scouts_clone = scouts.clone();
+                }
+                Key::Q => {
+                    path = Path::new(Point2::ZERO, path_curves.clone(), path_terminators.clone());
+                    scouts.iter_mut().for_each(|e| e.reset());
+                    scouts_clone = scouts.clone();
                 }
                 _ => {}
             }
         }
 
-        // do tracing here.
-        // let lines = vec![];
+        path.advance(0.016);
+        let dv = path.current_position() - pos;
+        println!("{:?}", scouts[0].pos);
 
-        // for line in lines.drain(..) {
-        //     let (px0, py0) = (
-        //         (WINDOW_WIDTH as f32 * (line.0.x() - relative_view_bounds.x.lower)
-        //             / relative_view_bounds.x.span()) as usize,
-        //         (WINDOW_HEIGHT as f32 * (line.0.y() - relative_view_bounds.y.lower)
-        //             / relative_view_bounds.y.span()) as usize,
-        //     );
-        //     let (px1, py1) = (
-        //         (WINDOW_WIDTH as f32 * (line.1.x() - relative_view_bounds.x.lower)
-        //             / relative_view_bounds.x.span()) as usize,
-        //         (WINDOW_HEIGHT as f32 * (line.1.y() - relative_view_bounds.y.lower)
-        //             / relative_view_bounds.y.span()) as usize,
-        //     );
+        pos += dv;
+        scouts.iter_mut().for_each(|e| e.update(dv));
 
-        //     let (dx, dy) = (px1 as isize - px0 as isize, py1 as isize - py0 as isize);
-        //     if dx == 0 && dy == 0 {
-        //         if px0 as usize >= WINDOW_WIDTH || py0 as usize >= WINDOW_HEIGHT {
-        //             continue;
-        //         }
-        //         film.buffer[py0 as usize * width + px0 as usize] += line.2;
-        //         continue;
-        //     }
-        //     let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
-        //     match draw_mode {
-        //         DrawMode::Midpoint => {
-        //             for (x, y) in line_drawing::Midpoint::<f32, isize>::new(
-        //                 (px0 as f32, py0 as f32),
-        //                 (px1 as f32, py1 as f32),
-        //             ) {
-        //                 if x as usize >= WINDOW_WIDTH
-        //                     || y as usize >= WINDOW_HEIGHT
-        //                     || x < 0
-        //                     || y < 0
-        //                 {
-        //                     continue;
-        //                 }
-        //                 assert!(!b.is_nan(), "{} {}", dx, dy);
-        //                 film.buffer[y as usize * width + x as usize] += line.2 * b;
-        //             }
-        //         }
-        //         DrawMode::XiaolinWu => {
-        //             // let b = 1.0f32;
-        //             for ((x, y), a) in line_drawing::XiaolinWu::<f32, isize>::new(
-        //                 (px0 as f32, py0 as f32),
-        //                 (px1 as f32, py1 as f32),
-        //             ) {
-        //                 if x as usize >= WINDOW_WIDTH
-        //                     || y as usize >= WINDOW_HEIGHT
-        //                     || x < 0
-        //                     || y < 0
-        //                 {
-        //                     continue;
-        //                 }
-        //                 assert!(!b.is_nan(), "{} {}", dx, dy);
-        //                 film.buffer[y as usize * width + x as usize] += line.2 * b * a;
-        //             }
-        //         }
-        //         DrawMode::Bresenham => {
-        //             for (x, y) in line_drawing::Bresenham::new(
-        //                 (px0 as isize, py0 as isize),
-        //                 (px1 as isize, py1 as isize),
-        //             ) {
-        //                 if x as usize >= WINDOW_WIDTH
-        //                     || y as usize >= WINDOW_HEIGHT
-        //                     || x < 0
-        //                     || y < 0
-        //                 {
-        //                     continue;
-        //                 }
-        //                 assert!(!b.is_nan(), "{} {}", dx, dy);
-        //                 film.buffer[y as usize * width + x as usize] += line.2 * b;
-        //             }
-        //         }
-        //     }
-        // }
+        for (i, scout) in scouts.iter().enumerate() {
+            // let dp = scout.pos - scouts_clone[i].pos;
+
+            {
+                let line = (
+                    scouts_clone[i].pos,
+                    scout.pos,
+                    XYZColor::from(SingleWavelength::new(550.0, 1.0.into())),
+                );
+                let (px0, py0) = (
+                    (WINDOW_WIDTH as f32 * (line.0.x() - relative_view_bounds.x.lower)
+                        / relative_view_bounds.x.span()) as usize,
+                    (WINDOW_HEIGHT as f32 * (line.0.y() - relative_view_bounds.y.lower)
+                        / relative_view_bounds.y.span()) as usize,
+                );
+                let (px1, py1) = (
+                    (WINDOW_WIDTH as f32 * (line.1.x() - relative_view_bounds.x.lower)
+                        / relative_view_bounds.x.span()) as usize,
+                    (WINDOW_HEIGHT as f32 * (line.1.y() - relative_view_bounds.y.lower)
+                        / relative_view_bounds.y.span()) as usize,
+                );
+
+                let (dx, dy) = (px1 as isize - px0 as isize, py1 as isize - py0 as isize);
+                if dx == 0 && dy == 0 {
+                    if px0 as usize >= WINDOW_WIDTH || py0 as usize >= WINDOW_HEIGHT {
+                        continue;
+                    }
+                    film.buffer[py0 as usize * width + px0 as usize] += line.2;
+                    continue;
+                }
+                let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+                match draw_mode {
+                    DrawMode::Midpoint => {
+                        for (x, y) in line_drawing::Midpoint::<f32, isize>::new(
+                            (px0 as f32, py0 as f32),
+                            (px1 as f32, py1 as f32),
+                        ) {
+                            if x as usize >= WINDOW_WIDTH
+                                || y as usize >= WINDOW_HEIGHT
+                                || x < 0
+                                || y < 0
+                            {
+                                continue;
+                            }
+                            assert!(!b.is_nan(), "{} {}", dx, dy);
+                            film.buffer[y as usize * width + x as usize] += line.2 * b;
+                        }
+                    }
+                    DrawMode::XiaolinWu => {
+                        // let b = 1.0f32;
+                        for ((x, y), a) in line_drawing::XiaolinWu::<f32, isize>::new(
+                            (px0 as f32, py0 as f32),
+                            (px1 as f32, py1 as f32),
+                        ) {
+                            if x as usize >= WINDOW_WIDTH
+                                || y as usize >= WINDOW_HEIGHT
+                                || x < 0
+                                || y < 0
+                            {
+                                continue;
+                            }
+                            assert!(!b.is_nan(), "{} {}", dx, dy);
+                            film.buffer[y as usize * width + x as usize] += line.2 * b * a;
+                        }
+                    }
+                    DrawMode::Bresenham => {
+                        for (x, y) in line_drawing::Bresenham::new(
+                            (px0 as isize, py0 as isize),
+                            (px1 as isize, py1 as isize),
+                        ) {
+                            if x as usize >= WINDOW_WIDTH
+                                || y as usize >= WINDOW_HEIGHT
+                                || x < 0
+                                || y < 0
+                            {
+                                continue;
+                            }
+                            assert!(!b.is_nan(), "{} {}", dx, dy);
+                            film.buffer[y as usize * width + x as usize] += line.2 * b;
+                        }
+                    }
+                }
+            }
+        }
+        scouts_clone = scouts.clone();
+
         let srgb_tonemapper = sRGB::new(&film, 0.0);
         window_pixels
             .buffer
