@@ -1,0 +1,387 @@
+extern crate line_drawing;
+extern crate minifb;
+
+use lib::curves::{load_ior_and_kappa, load_multiple_csv_rows};
+use lib::flatland::{Point2, Vec2};
+use lib::spectral::{InterpolationMode, BOUNDED_VISIBLE_RANGE, EXTENDED_VISIBLE_RANGE, SPD};
+use lib::tonemap::{sRGB, Tonemapper};
+use lib::trace::{Bounds1D, Bounds2D, SingleWavelength};
+use lib::{rgb_to_u32, Film};
+
+use math::XYZColor;
+#[allow(unused_imports)]
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
+
+use packed_simd::f32x2;
+use rand::prelude::*;
+use rayon::prelude::*;
+
+const WINDOW_WIDTH: usize = 800;
+const WINDOW_HEIGHT: usize = 800;
+
+enum DrawMode {
+    XiaolinWu,
+    Midpoint,
+    Bresenham,
+}
+
+#[derive(Copy, Clone)]
+enum Bezier {
+    Linear {
+        p0: Point2,
+        p1: Point2,
+    },
+    Quadratic {
+        p0: Point2,
+        p1: Point2,
+        p2: Point2,
+    },
+    Cubic {
+        p0: Point2,
+        p1: Point2,
+        p2: Point2,
+        p3: Point2,
+    },
+}
+
+impl Bezier {
+    pub fn beginning(&self) -> Point2 {
+        self.eval(0.0)
+    }
+    pub fn end(&self) -> Point2 {
+        self.eval(1.0)
+    }
+    pub fn eval(&self, t: f32) -> Point2 {
+        let one_t = 1.0 - t;
+        let one_t_2 = one_t * one_t;
+        let one_t_3 = one_t_2 * one_t;
+        let t_2 = t * t;
+        let t_3 = t_2 * t;
+        match self {
+            &Bezier::Linear { p0, p1 } => p0 + t * (p1 - p0),
+            &Bezier::Quadratic { p0, p1, p2 } => p1 + one_t_2 * (p0 - p1) + t * t * (p2 - p1),
+            &Bezier::Cubic { p0, p1, p2, p3 } => Point2::from_raw(
+                one_t_3 * p0.0 + 3.0 * one_t_2 * t * p1.0 + 3.0 * one_t * t_2 * p2.0 + t_3 * p3.0,
+            ),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Curve {
+    pub list: Vec<Bezier>,
+}
+
+impl Curve {
+    pub fn from_bezier_list(list: Vec<Bezier>) -> Self {
+        for (bezier0, bezier1) in list.iter().zip(list.iter().take(1)) {
+            // beziers should be arranged roughly head to tail.
+            assert!((bezier0.end() - bezier1.beginning()).norm_squared() < 0.00001);
+        }
+        Curve { list }
+    }
+
+    pub fn eval(&self, t: f32) -> Point2 {
+        let f32_len = self.list.len() as f32;
+        let bin = (t * f32_len) as usize;
+        let adjusted_t = t - (bin as f32 / f32_len);
+
+        let mut point = Point2::ZERO;
+        for i in 0..bin {
+            point += Vec2::from_raw(self.list[i].end().0);
+        }
+        point += Vec2::from_raw(self.list[bin].eval(adjusted_t).0);
+        point
+    }
+
+    pub fn eval_vec(&self, t: f32) -> Vec2 {
+        Vec2::from_raw(self.eval(t).0)
+    }
+}
+
+struct Path {
+    // path is made up of curve fragments
+    // each curve fragment is a curve + some max "time" for each fragment.
+    pub fragments: Vec<(Curve, f32)>,
+    // we also need the current "time", and the "time" after which we switch to a new fragment.
+    pub current_time: f32,
+    pub current_base_position: Point2,
+    pub current_base_time: f32,
+    pub next_fragment_time: f32,
+}
+
+impl Path {
+    pub fn new(base_position: Point2, curves: Vec<Curve>, terminators: Vec<f32>) -> Self {
+        assert!(curves.len() > 0 && terminators.len() == curves.len());
+        let first_time = *terminators.first().unwrap();
+        Path {
+            fragments: curves
+                .iter()
+                .zip(terminators.iter())
+                .map(|(&e0, &e1)| (e0, e1))
+                .collect::<Vec<(Curve, f32)>>(),
+            current_time: 0.0,
+            current_base_position: base_position,
+            current_base_time: 0.0,
+            next_fragment_time: first_time,
+        }
+    }
+    pub fn eval(&self, time: f32) -> Point2 {
+        assert!(time > self.current_time);
+        let mut pos = self.current_base_position;
+        let mut offset = time - self.current_base_time;
+        for (curve, terminator) in &self.fragments {
+            if offset < *terminator {
+                pos += curve.eval_vec(offset);
+                break;
+            } else {
+                pos += curve.eval_vec(*terminator);
+                offset -= *terminator;
+            }
+        }
+        pos
+    }
+    pub fn current_position(&self) -> Point2 {
+        let offset = self.current_time - self.current_base_time;
+        let fragment = self.fragments.first().unwrap();
+        self.current_base_position + fragment.0.eval_vec(offset)
+    }
+    pub fn advance(&mut self, delta: f32) {
+        // advance the current time.
+        // if we tick over the fragment border, update current_base_position and current_base_time
+        // and remove the current fragment.
+        // else, just update current_Time.
+        if self.current_time + delta > self.next_fragment_time {
+            if self.fragments.len() == 1 {
+                self.current_time = self.next_fragment_time;
+                return;
+            }
+            // calculate end of this fragment and add to current_base_position
+            let frag = self.fragments.first().unwrap();
+            self.current_base_position += frag.0.eval_vec(frag.1);
+            self.current_base_time = self.current_base_time + frag.1;
+            let _ = self.fragments.remove(0);
+        } else {
+            self.current_time += delta;
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct Scout {}
+impl Scout {
+    pub fn new() -> Self {
+        Scout {}
+    }
+
+    pub fn update(&self, delta: f32) {}
+}
+
+fn main() {
+    let threads = 1;
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build_global()
+        .unwrap();
+    let mut window = Window::new(
+        "PotionCraft Path Simulator",
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        WindowOptions {
+            scale: Scale::X1,
+            ..WindowOptions::default()
+        },
+    )
+    .unwrap_or_else(|e| {
+        panic!("{}", e);
+    });
+
+    let mut film = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, XYZColor::BLACK);
+    let mut window_pixels = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, 0u32);
+    window.limit_update_rate(Some(std::time::Duration::from_micros(6944)));
+    let width = film.width;
+    let height = film.height;
+
+    // let frame_dt = 6944.0 / 1000000.0;
+
+    let relative_view_bounds = Bounds2D::new(Bounds1D::new(-5.0, 5.0), Bounds1D::new(-5.0, 5.0));
+    let (_box_width, _box_height) = (
+        relative_view_bounds.x.span() / width as f32,
+        relative_view_bounds.y.span() / height as f32,
+    );
+
+    let max_ingredient_id = 4;
+
+    let mut view_offset = Point2::new(0.0, 0.0);
+    let mut draw_mode = DrawMode::XiaolinWu;
+    let mut selected_ingredient = 0usize;
+
+    let ingredients = vec![Curve::from_bezier_list(vec![
+        Bezier::Linear {
+            p0: Point2::new(0.0, 0.0),
+            p1: Point2::new(-1.25, 1.0),
+        },
+        Bezier::Linear {
+            p0: Point2::new(-1.25, 1.0),
+            p1: Point2::new(-2.5, 0.0),
+        },
+        Bezier::Linear {
+            p0: Point2::new(-2.5, 0.0),
+            p1: Point2::new(-3.75, 1.0),
+        },
+        Bezier::Linear {
+            p0: Point2::new(-3.75, 1.0),
+            p1: Point2::new(-5.0, 0.0),
+        },
+    ])];
+
+    let grind_levels = vec![(0.5f32, 1.0f32)];
+
+    let mut grind_level = 0.0f32;
+
+    let mut scouts = vec![Scout::new(); 1000];
+
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        let keys = window.get_keys_pressed(KeyRepeat::Yes);
+        let config_move = if window.is_key_down(Key::NumPadPlus) {
+            1.0
+        } else if window.is_key_down(Key::NumPadMinus) {
+            -1.0
+        } else {
+            0.0
+        };
+        for key in keys.unwrap_or(vec![]) {
+            match key {
+                Key::Tab => {
+                    // change selected ingredient
+                    selected_ingredient += 1;
+                    if selected_ingredient > max_ingredient_id {
+                        selected_ingredient = 0;
+                    }
+                }
+                Key::Space => {
+                    // add selected ingredient to the pot (path)
+                }
+                Key::G => {
+                    // grind selected ingredient.
+                    unimplemented!();
+                }
+                Key::Up => {
+                    // move view Up
+                    view_offset.0 = view_offset.0 + f32x2::new(0.0, 0.1);
+                }
+                Key::Down => {
+                    // move view Down
+                    view_offset.0 = view_offset.0 + f32x2::new(0.0, -0.1);
+                }
+                Key::Left => {
+                    // move view Left
+                    view_offset.0 = view_offset.0 + f32x2::new(-0.1, 0.0);
+                }
+                Key::Right => {
+                    // move view Right
+                    view_offset.0 = view_offset.0 + f32x2::new(0.1, 0.0);
+                }
+                Key::R => {
+                    // reset all scouts
+                    scouts.iter_mut().for_each(|e| e.reset());
+                }
+                _ => {}
+            }
+        }
+
+        // do tracing here.
+        // let lines = vec![];
+
+        // for line in lines.drain(..) {
+        //     let (px0, py0) = (
+        //         (WINDOW_WIDTH as f32 * (line.0.x() - relative_view_bounds.x.lower)
+        //             / relative_view_bounds.x.span()) as usize,
+        //         (WINDOW_HEIGHT as f32 * (line.0.y() - relative_view_bounds.y.lower)
+        //             / relative_view_bounds.y.span()) as usize,
+        //     );
+        //     let (px1, py1) = (
+        //         (WINDOW_WIDTH as f32 * (line.1.x() - relative_view_bounds.x.lower)
+        //             / relative_view_bounds.x.span()) as usize,
+        //         (WINDOW_HEIGHT as f32 * (line.1.y() - relative_view_bounds.y.lower)
+        //             / relative_view_bounds.y.span()) as usize,
+        //     );
+
+        //     let (dx, dy) = (px1 as isize - px0 as isize, py1 as isize - py0 as isize);
+        //     if dx == 0 && dy == 0 {
+        //         if px0 as usize >= WINDOW_WIDTH || py0 as usize >= WINDOW_HEIGHT {
+        //             continue;
+        //         }
+        //         film.buffer[py0 as usize * width + px0 as usize] += line.2;
+        //         continue;
+        //     }
+        //     let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
+        //     match draw_mode {
+        //         DrawMode::Midpoint => {
+        //             for (x, y) in line_drawing::Midpoint::<f32, isize>::new(
+        //                 (px0 as f32, py0 as f32),
+        //                 (px1 as f32, py1 as f32),
+        //             ) {
+        //                 if x as usize >= WINDOW_WIDTH
+        //                     || y as usize >= WINDOW_HEIGHT
+        //                     || x < 0
+        //                     || y < 0
+        //                 {
+        //                     continue;
+        //                 }
+        //                 assert!(!b.is_nan(), "{} {}", dx, dy);
+        //                 film.buffer[y as usize * width + x as usize] += line.2 * b;
+        //             }
+        //         }
+        //         DrawMode::XiaolinWu => {
+        //             // let b = 1.0f32;
+        //             for ((x, y), a) in line_drawing::XiaolinWu::<f32, isize>::new(
+        //                 (px0 as f32, py0 as f32),
+        //                 (px1 as f32, py1 as f32),
+        //             ) {
+        //                 if x as usize >= WINDOW_WIDTH
+        //                     || y as usize >= WINDOW_HEIGHT
+        //                     || x < 0
+        //                     || y < 0
+        //                 {
+        //                     continue;
+        //                 }
+        //                 assert!(!b.is_nan(), "{} {}", dx, dy);
+        //                 film.buffer[y as usize * width + x as usize] += line.2 * b * a;
+        //             }
+        //         }
+        //         DrawMode::Bresenham => {
+        //             for (x, y) in line_drawing::Bresenham::new(
+        //                 (px0 as isize, py0 as isize),
+        //                 (px1 as isize, py1 as isize),
+        //             ) {
+        //                 if x as usize >= WINDOW_WIDTH
+        //                     || y as usize >= WINDOW_HEIGHT
+        //                     || x < 0
+        //                     || y < 0
+        //                 {
+        //                     continue;
+        //                 }
+        //                 assert!(!b.is_nan(), "{} {}", dx, dy);
+        //                 film.buffer[y as usize * width + x as usize] += line.2 * b;
+        //             }
+        //         }
+        //     }
+        // }
+        let srgb_tonemapper = sRGB::new(&film, 0.0);
+        window_pixels
+            .buffer
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(pixel_idx, v)| {
+                let y: usize = pixel_idx / width;
+                let x: usize = pixel_idx - width * y;
+                let (mapped, _linear) = srgb_tonemapper.map(&film, (x, y));
+                let [r, g, b, _]: [f32; 4] = mapped.into();
+                *v = rgb_to_u32((255.0 * r) as u8, (255.0 * g) as u8, (255.0 * b) as u8);
+            });
+        window
+            .update_with_buffer(&window_pixels.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
+            .unwrap();
+    }
+}

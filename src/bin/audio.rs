@@ -390,6 +390,7 @@ fn main() {
     let _freq_range = 22000;
     let num_bins = 1024;
     let mut last_bins = Vec::new();
+    let (mut min, mut max) = (f32::INFINITY, f32::NEG_INFINITY);
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         buffer.fill(0u32);
@@ -424,13 +425,22 @@ fn main() {
         // perform DFT
         let amplitudes = dft(&signal, input_sample_rate as usize, num_bins);
         if let Some(amplitudes) = amplitudes {
+            for a in &amplitudes {
+                min = min.min(*a);
+                max = max.max(*a);
+            }
             last_bins.push(amplitudes);
         }
+
+        // for a in last_bins.last().unwrap() {
+        // }
+
+        println!("{:?} {:?}", min, max);
 
         for (y, bin) in last_bins.iter().rev().enumerate() {
             // iterate from newest to oldest
             for (x, a) in bin.iter().enumerate() {
-                let sig = 1.0 - (-*a * 2.0).exp();
+                let sig = 1.0 - (-*a * 10.0).exp();
                 // let sig = *a;
                 buffer[(y + 300) * WINDOW_WIDTH + x] = ((sig.clamp(0.0, 1.0) * 255.0) as u32) << 8;
             }
