@@ -132,7 +132,7 @@ impl Path {
         }
     }
     pub fn eval(&self, time: f32) -> Point2 {
-        assert!(time > self.current_time);
+        assert!(time >= self.current_time);
         let mut pos = self.current_base_position;
         let mut offset = time - self.current_base_time;
         for (curve, terminator) in &self.fragments {
@@ -164,8 +164,10 @@ impl Path {
             // calculate end of this fragment and add to current_base_position
             let frag = self.fragments.first().unwrap();
             self.current_base_position += frag.0.eval_vec(frag.1);
-            self.current_base_time = self.current_base_time + frag.1;
+            self.current_base_time = self.next_fragment_time;
             let _ = self.fragments.remove(0);
+            self.next_fragment_time = self.current_base_time + self.fragments[0].1;
+            self.current_time += delta;
         } else {
             self.current_time += delta;
         }
@@ -184,7 +186,7 @@ impl Scout {
 
     pub fn update(&mut self, dv: Vec2) {
         loop {
-            if random::<f32>() < 0.4 {
+            if random::<f32>() < 0.05 {
                 // 40% chance of going towards the origin
                 self.pos -= (self.pos - Point2::ZERO) * 0.06;
             } else {
@@ -226,7 +228,8 @@ fn main() {
 
     // let frame_dt = 6944.0 / 1000000.0;
 
-    let relative_view_bounds = Bounds2D::new(Bounds1D::new(-5.0, 5.0), Bounds1D::new(-5.0, 5.0));
+    let relative_view_bounds =
+        Bounds2D::new(Bounds1D::new(-20.0, 20.0), Bounds1D::new(20.0, -20.0));
     let (_box_width, _box_height) = (
         relative_view_bounds.x.span() / width as f32,
         relative_view_bounds.y.span() / height as f32,
@@ -235,7 +238,7 @@ fn main() {
     let max_ingredient_id = 4;
 
     let mut view_offset = Point2::new(0.0, 0.0);
-    let mut draw_mode = DrawMode::XiaolinWu;
+    let mut draw_mode = DrawMode::Midpoint;
     let mut selected_ingredient = 0usize;
 
     let ingredients = vec![Curve::from_bezier_list(vec![
@@ -328,15 +331,17 @@ fn main() {
                     scouts_clone = scouts.clone();
                 }
                 Key::Q => {
+                    pos = Point2::ZERO;
                     path = Path::new(Point2::ZERO, path_curves.clone(), path_terminators.clone());
                     scouts.iter_mut().for_each(|e| e.reset());
                     scouts_clone = scouts.clone();
+                    film.buffer.fill(XYZColor::BLACK);
                 }
                 _ => {}
             }
         }
 
-        path.advance(0.016);
+        path.advance(0.01);
         let dv = path.current_position() - pos;
         println!("{:?}", scouts[0].pos);
 
@@ -345,8 +350,15 @@ fn main() {
 
         for (i, scout) in scouts.iter().enumerate() {
             // let dp = scout.pos - scouts_clone[i].pos;
-
-            {
+            let (px0, py0) = (
+                (WINDOW_WIDTH as f32 * (scout.pos.x() - relative_view_bounds.x.lower)
+                    / relative_view_bounds.x.span()) as usize,
+                (WINDOW_HEIGHT as f32 * (scout.pos.y() - relative_view_bounds.y.lower)
+                    / relative_view_bounds.y.span()) as usize,
+            );
+            film.buffer[py0 as usize * width + px0 as usize] =
+                XYZColor::from(SingleWavelength::new(550.0, 10.0.into()));
+            if false {
                 let line = (
                     scouts_clone[i].pos,
                     scout.pos,
@@ -388,7 +400,7 @@ fn main() {
                                 continue;
                             }
                             assert!(!b.is_nan(), "{} {}", dx, dy);
-                            film.buffer[y as usize * width + x as usize] += line.2 * b;
+                            film.buffer[y as usize * width + x as usize] = line.2;
                         }
                     }
                     DrawMode::XiaolinWu => {
@@ -405,7 +417,7 @@ fn main() {
                                 continue;
                             }
                             assert!(!b.is_nan(), "{} {}", dx, dy);
-                            film.buffer[y as usize * width + x as usize] += line.2 * b * a;
+                            film.buffer[y as usize * width + x as usize] = line.2 * a;
                         }
                     }
                     DrawMode::Bresenham => {
@@ -421,7 +433,7 @@ fn main() {
                                 continue;
                             }
                             assert!(!b.is_nan(), "{} {}", dx, dy);
-                            film.buffer[y as usize * width + x as usize] += line.2 * b;
+                            film.buffer[y as usize * width + x as usize] = line.2;
                         }
                     }
                 }
@@ -429,7 +441,7 @@ fn main() {
         }
         scouts_clone = scouts.clone();
 
-        let srgb_tonemapper = sRGB::new(&film, 0.0);
+        let srgb_tonemapper = sRGB::new(&film, 1.0);
         window_pixels
             .buffer
             .par_iter_mut()
@@ -444,5 +456,141 @@ fn main() {
         window
             .update_with_buffer(&window_pixels.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_beziers() {
+        let linear_bezier = Bezier::Linear {
+            p0: Point2::new(0.0, 0.0),
+            p1: Point2::new(-1.25, 1.0),
+        };
+
+        println!("linear bezier");
+        for i in 0..=10 {
+            let t = i as f32 / 10.0;
+            let p = linear_bezier.eval(t);
+            println!("{:?}", p);
+        }
+
+        let quadratic_bezier = Bezier::Quadratic {
+            p0: Point2::new(1.0, 0.0),
+            p1: Point2::new(0.0, 1.0),
+            p2: Point2::new(-1.0, 0.0),
+        };
+
+        println!("quadratic bezier");
+        for i in 0..=10 {
+            let t = i as f32 / 10.0;
+            let p = quadratic_bezier.eval(t);
+            println!("{:?}", p);
+        }
+
+        let cubic_bezier = Bezier::Cubic {
+            p0: Point2::new(1.0, 1.0),
+            p1: Point2::new(-1.0, 1.0),
+            p2: Point2::new(-1.0, -1.0),
+            p3: Point2::new(1.0, -1.0),
+        };
+
+        println!("cubic bezier");
+        for i in 0..=10 {
+            let t = i as f32 / 10.0;
+            let p = cubic_bezier.eval(t);
+            println!("{:?}", p);
+        }
+    }
+
+    #[test]
+    fn test_curve() {
+        let curve0 = Curve::from_bezier_list(vec![
+            Bezier::Linear {
+                p0: Point2::new(0.0, 0.0),
+                p1: Point2::new(-1.25, 1.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-1.25, 1.0),
+                p1: Point2::new(-2.5, 0.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-2.5, 0.0),
+                p1: Point2::new(-3.75, 1.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-3.75, 1.0),
+                p1: Point2::new(-5.0, 0.0),
+            },
+        ]);
+
+        for i in 0..=100 {
+            let t = i as f32 / 100.0;
+            let p = curve0.eval(t);
+            println!("{:?}", p);
+        }
+    }
+
+    #[test]
+    fn test_path() {
+        let curve0 = Curve::from_bezier_list(vec![
+            Bezier::Linear {
+                p0: Point2::new(0.0, 0.0),
+                p1: Point2::new(-1.25, 1.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-1.25, 1.0),
+                p1: Point2::new(-2.5, 0.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-2.5, 0.0),
+                p1: Point2::new(-3.75, 1.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-3.75, 1.0),
+                p1: Point2::new(-5.0, 0.0),
+            },
+        ]);
+
+        let curve1 = Curve::from_bezier_list(vec![
+            Bezier::Linear {
+                p0: Point2::new(0.0, 0.0),
+                p1: Point2::new(-1.25, 1.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-1.25, 1.0),
+                p1: Point2::new(-2.5, 0.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-2.5, 0.0),
+                p1: Point2::new(-3.75, 1.0),
+            },
+            Bezier::Linear {
+                p0: Point2::new(-3.75, 1.0),
+                p1: Point2::new(-5.0, 0.0),
+            },
+        ]);
+
+        // let path = Path::new(Point2::ZERO, vec![curve0, curve1], vec![1.0, 1.0]);
+        let mut path = Path::new(Point2::ZERO, vec![curve0, curve1], vec![0.75, 0.75]);
+
+        for i in 0..=100 {
+            let t = i as f32 / 50.0;
+            let p = path.eval(t);
+            println!("{:?}", p);
+        }
+
+        println!("tested eval, now testing advance and position");
+
+        // let mut t = 0.0;
+        loop {
+            path.advance(0.01666);
+            println!("{:?}", path.current_position());
+            if path.current_time == path.next_fragment_time {
+                break;
+            }
+        }
     }
 }
