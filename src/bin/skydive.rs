@@ -132,7 +132,6 @@ fn main() {
             divers[0].angle = dy.atan2(dx) % TAU;
         }
         swap.par_iter_mut().enumerate().for_each(|(idx, new)| {
-            // find neighbors in perception radius
             // update diver angle based on controller, then update forces on diver and speed
             let mut diver = divers[idx];
             if idx != 0 {
