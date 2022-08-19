@@ -1,9 +1,12 @@
+#[macro_use]
+extern crate structopt;
 extern crate line_drawing;
 extern crate minifb;
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use std::ops::{AddAssign, Mul};
 
 use lib::flatland::{Point2, Vec2};
 use lib::spectral::BOUNDED_VISIBLE_RANGE;
@@ -15,13 +18,21 @@ use math::XYZColor;
 #[allow(unused_imports)]
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 
+use nalgebra::{matrix, Vector};
 use packed_simd::f32x2;
 use rand::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use structopt::StructOpt;
 
 const WINDOW_WIDTH: usize = 800;
 const WINDOW_HEIGHT: usize = 800;
+
+const MOON_SALT: &'static str = "MoonSalt";
+const SUN_SALT: &'static str = "SunSalt";
+const VOID_SALT: &'static str = "VoidSalt";
+
+const SALTS: &'static [&'static str] = &[MOON_SALT, SUN_SALT, VOID_SALT];
 
 enum DrawMode {
     XiaolinWu,
@@ -97,32 +108,15 @@ impl From<Point2> for IngredientType {
     }
 }
 
-#[derive(Clone)]
-enum MetadataVariant {
-    Float(f32),
-    String(String),
-    IngredientType(IngredientType),
-    None,
-}
-
-impl Default for MetadataVariant {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-#[derive(Clone, Default)]
-struct Metadata(HashMap<String, MetadataVariant>);
-
 #[derive(Clone, Deserialize, Serialize)]
-struct Curve {
+struct Ingredient {
+    pub name: String,
+    pub price: f32,
     pub list: Vec<Bezier>,
-    #[serde(skip)]
-    metadata: Metadata,
 }
 
-impl Curve {
-    pub fn from_bezier_list(list: Vec<Bezier>) -> Self {
+impl Ingredient {
+    pub fn new(name: String, price: f32, list: Vec<Bezier>) -> Self {
         for (bezier0, bezier1) in list.iter().zip(list.iter().skip(1)) {
             // beziers should be arranged roughly head to tail.
             assert!(
@@ -132,10 +126,7 @@ impl Curve {
                 bezier1.beginning()
             );
         }
-        Curve {
-            list,
-            metadata: Metadata(HashMap::new()),
-        }
+        Ingredient { name, price, list }
     }
 
     pub fn eval(&self, t: f32) -> Point2 {
@@ -156,17 +147,179 @@ impl Curve {
     pub fn eval_vec(&self, t: f32) -> Vec2 {
         Vec2::from_raw(self.eval(t).0)
     }
+}
 
-    pub fn tag(mut self, key: String, val: MetadataVariant) -> Self {
-        self.metadata.0.insert(key, val);
-        self
+#[derive(Copy, Clone, Default, Debug)]
+struct Cost {
+    pub gold: f32,
+    pub void_salt: usize,
+    pub moon_salt: usize,
+    pub sun_salt: usize,
+}
+
+impl Cost {
+    pub fn as_array(self) -> [f32; 4] {
+        [
+            self.gold,
+            self.void_salt as f32,
+            self.moon_salt as f32,
+            self.sun_salt as f32,
+        ]
+    }
+    pub fn resolve(self, ingredients: &HashMap<String, Cost>) -> f32 {
+        // resolves all salts to gold, dividing salt amounts by 5000 and multiplying by recipe cost.
+        let as_array = self.as_array();
+        let mut total_cost = as_array[0];
+        let as_slice = &as_array[1..];
+        for (name, count) in SALTS.iter().zip(as_slice.iter()) {
+            let cost = ingredients[*name];
+            // assuming the recursive cost for salts has already been solved, and that the cost for each salt is given in gold
+            total_cost += cost.gold * *count;
+        }
+        total_cost
+    }
+}
+
+impl AddAssign for Cost {
+    fn add_assign(&mut self, rhs: Self) {
+        self.gold += rhs.gold;
+        self.void_salt += rhs.void_salt;
+        self.moon_salt += rhs.moon_salt;
+        self.sun_salt += rhs.sun_salt;
+    }
+}
+
+impl Mul<usize> for Cost {
+    type Output = Cost;
+    fn mul(self, rhs: usize) -> Self::Output {
+        Self {
+            gold: self.gold * rhs as f32,
+            void_salt: self.void_salt * rhs,
+            moon_salt: self.moon_salt * rhs,
+            sun_salt: self.sun_salt * rhs,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+struct Potion {
+    pub ingredients: HashMap<String, usize>,
+}
+
+impl Potion {
+    pub fn get_total_cost(&self, ingredients_cost: &HashMap<String, Cost>) -> Cost {
+        let mut cost = Cost::default();
+        for (name, count) in &self.ingredients {
+            match name.as_str() {
+                MOON_SALT => {
+                    cost += Cost {
+                        moon_salt: *count,
+                        ..Default::default()
+                    };
+                }
+                SUN_SALT => {
+                    cost += Cost {
+                        sun_salt: *count,
+                        ..Default::default()
+                    };
+                }
+                VOID_SALT => {
+                    cost += Cost {
+                        void_salt: *count,
+                        ..Default::default()
+                    };
+                }
+                name => {
+                    cost += ingredients_cost
+                        .get(name)
+                        .cloned()
+                        .unwrap_or(Cost::default())
+                        * *count;
+                }
+            }
+        }
+        cost
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+struct PotionLib {
+    potions: HashMap<String, Potion>,
+    secondary_ingredients: HashMap<String, Vec<String>>,
+}
+
+use std::io::{BufWriter, Write};
+impl PotionLib {
+    pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) {
+        let string = toml::to_string(self).unwrap();
+        let mut file = BufWriter::new(
+            File::options()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(&path)
+                .unwrap(),
+        );
+        file.write_all(string.as_bytes()).unwrap();
+        file.flush().unwrap();
+    }
+
+    pub fn get_total_cost_of(
+        &self,
+        k: &str,
+        cache: &mut HashMap<String, Cost>,
+        printout: bool,
+    ) -> Cost {
+        if let Some(this_cost) = cache.get(k) {
+            if printout {
+                println!("cache hit,  adding cost of {}, {:?}", k, this_cost);
+            }
+            return *this_cost;
+        }
+        if printout {
+            println!("calculating cost of {}", k);
+        }
+        let mut cost = Cost::default();
+
+        if let Some(potion) = self.potions.get(k) {
+            let this_cost = potion.get_total_cost(cache);
+
+            cache.insert(k.to_string(), this_cost);
+            if printout {
+                println!("potion: adding cost of {}, {:?}", k, this_cost);
+            }
+
+            cost += this_cost;
+        } else if let Some(ingredients) = self.secondary_ingredients.get(k) {
+            for ingredient in ingredients {
+                // can't allow loops, i.e. Moon salt directly requiring Moon salt. doesn't make sense.
+                assert!(k != ingredient.as_str());
+                if let Some(this_cost) = cache.get(ingredient) {
+                    if printout {
+                        println!("cache hit,  adding cost of {}, {:?}", ingredient, this_cost);
+                    }
+                    cost += *this_cost;
+                } else {
+                    if printout {
+                        print!("cache miss ");
+                    }
+                    let this_cost = self.get_total_cost_of(ingredient.as_str(), cache, printout);
+                    cost += this_cost;
+                }
+            }
+        }
+        if printout {
+            println!("returning cost of {} as {:?}", k, cost);
+        }
+        cache.insert(k.to_string(), cost);
+        cost
     }
 }
 
 struct Path {
     // path is made up of curve fragments
     // each curve fragment is a curve + some max "time" for each fragment.
-    pub fragments: Vec<(Curve, f32)>,
+    pub fragments: Vec<(Ingredient, f32)>,
     // we also need the current "time", and the end "time" for this fragment after which we switch to a new fragment.
     pub current_time: f32,
     pub current_base_position: Point2,
@@ -175,7 +328,7 @@ struct Path {
 }
 
 impl Path {
-    pub fn new(base_position: Point2, curves: Vec<Curve>, terminators: Vec<f32>) -> Self {
+    pub fn new(base_position: Point2, curves: Vec<Ingredient>, terminators: Vec<f32>) -> Self {
         assert!(curves.len() > 0 && terminators.len() == curves.len());
         let first_time = *terminators.first().unwrap();
         Path {
@@ -184,7 +337,7 @@ impl Path {
                 .cloned()
                 .zip(terminators.iter())
                 .map(|(e0, &e1)| (e0, e1))
-                .collect::<Vec<(Curve, f32)>>(),
+                .collect::<Vec<(Ingredient, f32)>>(),
             current_time: 0.0,
             current_base_position: base_position,
             current_base_time: 0.0,
@@ -232,6 +385,13 @@ impl Path {
             self.current_time += delta;
         }
     }
+    pub fn as_potion(&self) -> Potion {
+        let mut ingredients = HashMap::new();
+        for (ingredient, _) in &self.fragments {
+            *ingredients.entry(ingredient.name.clone()).or_insert(0usize) += 1;
+        }
+        Potion { ingredients }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -275,9 +435,9 @@ fn parse_point(string: &str) -> Option<Point2> {
     pt.map(|e| Point2(f32x2::from([e.0, e.1])))
 }
 
-fn parse_ingredients_05<P>(filepath: P) -> Result<Vec<(String, Curve)>, ()>
+fn parse_ingredients_05<P>(filepath: P) -> Result<Vec<Ingredient>, ()>
 where
-    P: std::convert::AsRef<std::path::Path>,
+    P: AsRef<std::path::Path>,
 {
     let mut file = File::open(filepath).unwrap();
     let mut buf = String::new();
@@ -303,12 +463,11 @@ where
             let mut point = Point2::ZERO;
             let mut data: Vec<Bezier> = Vec::new();
             for curve_segment in curve_segments {
-                let point_count = curve_segment.chars().filter(|c| *c == ',').count();
-                let bezier;
                 let mut points = curve_segment
                     .split(" ")
                     .filter(|e| *e != "")
                     .collect::<Vec<_>>();
+                let bezier;
                 match points.len() + 1 {
                     2 => {
                         let p1 = parse_point(points.pop().unwrap()).unwrap();
@@ -352,14 +511,18 @@ where
                     .unwrap(),
             ).unwrap();
             let ingredient_type = IngredientType::from(end_point);
+            let price = price_header
+                .unwrap()
+                .split(": ")
+                .nth(1)
+                .unwrap()
+                .parse::<f32>()
+                .unwrap()
+                * 4.0;
+
+            let name = String::from(name);
             println!("done! type was {:?}", ingredient_type);
-            ingredients.push((
-                String::from(name),
-                Curve::from_bezier_list(data).tag(
-                    String::from(""),
-                    MetadataVariant::IngredientType(ingredient_type),
-                ),
-            ));
+            ingredients.push(Ingredient::new(name, price, data));
         } else {
             break;
         }
@@ -368,7 +531,75 @@ where
     Ok(ingredients)
 }
 
+fn get_or_create_potion_lib<P: AsRef<std::path::Path>>(path: P) -> PotionLib {
+    let mut salts = HashMap::new();
+    salts.insert(String::from(MOON_SALT), vec![]);
+    salts.insert(String::from(SUN_SALT), vec![]);
+    salts.insert(String::from(VOID_SALT), vec![]);
+    let mut potion_lib = PotionLib {
+        potions: HashMap::new(),
+        secondary_ingredients: salts,
+    };
+
+    if let Ok(mut file) = File::open(path) {
+        let mut buf = String::new();
+        if file.read_to_string(&mut buf).is_ok() {
+            let parsed = toml::from_str(buf.as_str());
+            potion_lib = parsed.unwrap_or(potion_lib);
+        }
+    }
+    potion_lib
+}
+
+fn solve_recursive_salt_costs(salts: &[&str], ingredients: &mut HashMap<String, Cost>) {
+    let mut matrix = nalgebra::Matrix4::<f32>::zeros();
+    matrix.set_row(0, &matrix![1.0, 0.0, 0.0, 0.0]);
+    for (i, salt) in salts.iter().enumerate() {
+        let mut row = ingredients.get(*salt).unwrap().clone().as_array();
+        row[i + 1] -= 5000.0;
+        matrix.set_row(i + 1, &row.into());
+        // rows.push(row);
+    }
+    let inverse = matrix.try_inverse().unwrap();
+    let solution = inverse * matrix![1.0, 1.0, 1.0, 1.0].transpose();
+    for (i, salt) in salts.iter().enumerate() {
+        *ingredients.get_mut(*salt).unwrap() = Cost {
+            gold: solution[1 + i],
+            ..Default::default()
+        };
+    }
+}
+
+enum Metric {
+    L2,
+    L1,
+    Gold,
+}
+
+impl Metric {
+    pub fn from(string: &str) -> Option<Self> {
+        let s = string.as_ref();
+        match s {
+            "l1" => Some(Metric::L1),
+            "l2" => Some(Metric::L2),
+            "gold" => Some(Metric::Gold),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+struct Opt {
+    #[structopt(long, default_value = "potions.toml")]
+    pub potion_lib: String,
+    // possible values: Gold, IngL2, IngL1
+    #[structopt(long, default_value = "gold")]
+    pub metric: String,
+}
+
 fn main() {
+    let opts: Opt = StructOpt::from_args();
     let threads = 1;
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
@@ -408,20 +639,56 @@ fn main() {
     // * Drag patches: changes how much the position moves per unit time. i.e. in a drag patch, an ingredient's path will effectively be scaled down by 2 while the position is inside the patch.
     // * sun salt and moon salt (f32: radians): rotates the bottle and the path around the bottle. a rotation of 2pi radians requires 1000 salt. moon salt rotates counter clockwise, and sun salt clockwise.
 
+    // currently only dilution is implemented through scouts.
+
     let mut view_offset = Vec2::new(0.0, 0.0);
-    let mut draw_mode = DrawMode::Midpoint;
+    let draw_mode = DrawMode::Midpoint;
     let mut selected_ingredient = 5usize;
 
     let ingredients = parse_ingredients_05("data/potioncraft_ingredients_0.5.txt").unwrap();
-    let max_ingredient_id = ingredients.len();
 
-    let grind_levels = vec![(0.5f32, 1.0f32)];
+    let max_ingredient_id = ingredients.len();
+    let mut ingredients_cost = ingredients
+        .iter()
+        .map(|e| {
+            (
+                e.name.clone(),
+                Cost {
+                    gold: e.price,
+                    ..Cost::default()
+                },
+            )
+        })
+        .collect::<HashMap<String, Cost>>();
+
+    let mut potion_lib: PotionLib = get_or_create_potion_lib(&opts.potion_lib);
+
+    for salt in [SUN_SALT, MOON_SALT, VOID_SALT] {
+        let _ = potion_lib.get_total_cost_of(salt, &mut ingredients_cost, true);
+    }
+    solve_recursive_salt_costs(SALTS, &mut ingredients_cost);
+    println!(
+        "cost of inspiration potion: {:?}",
+        potion_lib
+            .get_total_cost_of("Inspiration", &mut ingredients_cost, true)
+            .resolve(&ingredients_cost)
+    );
+    println!(
+        "cost of hallucination potion: {:?}",
+        potion_lib
+            .get_total_cost_of("Hallucinations", &mut ingredients_cost, true)
+            .resolve(&ingredients_cost)
+    );
+    for salt in [SUN_SALT, MOON_SALT, VOID_SALT] {
+        let cost = potion_lib.get_total_cost_of(salt, &mut ingredients_cost, false);
+        println!("cost of salt {} was {:?}", salt, cost);
+    }
 
     let mut path_curves = Vec::new();
     let mut path_terminators = Vec::new();
     let mut grind_level = 0.0f32;
 
-    path_curves.push(ingredients[3].1.clone());
+    path_curves.push(ingredients[3].clone());
     path_terminators.push(1.0);
 
     let mut path = Path::new(Point2::ZERO, path_curves.clone(), path_terminators.clone());
@@ -458,12 +725,12 @@ fn main() {
                     }
                     println!(
                         "selected ingredient is {}, name of {}",
-                        selected_ingredient, &ingredients[selected_ingredient].0
+                        selected_ingredient, &ingredients[selected_ingredient].name
                     );
                 }
                 Key::Space => {
                     // add selected ingredient to the pot (path)
-                    path_curves.push(ingredients[selected_ingredient].1.clone());
+                    path_curves.push(ingredients[selected_ingredient].clone());
                     // let grind_bounds = grind_levels[selected_ingredient];
                     let grind_bounds = (0.0, 1.0);
                     path_terminators
@@ -508,7 +775,7 @@ fn main() {
                     //reset ingredients to only the selected one
                     path_curves.clear();
                     path_terminators.clear();
-                    path_curves.push(ingredients[selected_ingredient].1.clone());
+                    path_curves.push(ingredients[selected_ingredient].clone());
                     // let grind_bounds = grind_levels[selected_ingredient];
                     let grind_bounds = (0.0, 1.0);
                     path_terminators
@@ -654,6 +921,18 @@ fn main() {
             .update_with_buffer(&window_pixels.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
             .unwrap();
     }
+
+    path_curves.clear();
+    path_terminators.clear();
+    path_curves.extend(ingredients.iter().cloned());
+    path_terminators.resize(path_curves.len(), 1.0);
+
+    potion_lib.potions.insert(
+        String::from("Everything"),
+        Path::new(Point2::ZERO, path_curves.clone(), path_terminators.clone()).as_potion(),
+    );
+
+    potion_lib.save_to_file(opts.potion_lib);
 }
 
 #[cfg(test)]
@@ -704,24 +983,28 @@ mod test {
 
     #[test]
     fn test_curve() {
-        let curve0 = Curve::from_bezier_list(vec![
-            Bezier::Linear {
-                p0: Point2::new(0.0, 0.0),
-                p1: Point2::new(-1.25, 1.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-1.25, 1.0),
-                p1: Point2::new(-2.5, 0.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-2.5, 0.0),
-                p1: Point2::new(-3.75, 1.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-3.75, 1.0),
-                p1: Point2::new(-5.0, 0.0),
-            },
-        ]);
+        let curve0 = Ingredient::new(
+            String::from("Firebell"),
+            0.0,
+            vec![
+                Bezier::Linear {
+                    p0: Point2::new(0.0, 0.0),
+                    p1: Point2::new(-1.25, 1.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-1.25, 1.0),
+                    p1: Point2::new(-2.5, 0.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-2.5, 0.0),
+                    p1: Point2::new(-3.75, 1.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-3.75, 1.0),
+                    p1: Point2::new(-5.0, 0.0),
+                },
+            ],
+        );
 
         for i in 0..=100 {
             let t = i as f32 / 100.0;
@@ -732,43 +1015,51 @@ mod test {
 
     #[test]
     fn test_path() {
-        let curve0 = Curve::from_bezier_list(vec![
-            Bezier::Linear {
-                p0: Point2::new(0.0, 0.0),
-                p1: Point2::new(-1.25, 1.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-1.25, 1.0),
-                p1: Point2::new(-2.5, 0.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-2.5, 0.0),
-                p1: Point2::new(-3.75, 1.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-3.75, 1.0),
-                p1: Point2::new(-5.0, 0.0),
-            },
-        ]);
+        let curve0 = Ingredient::new(
+            String::from("firebell"),
+            0.0,
+            vec![
+                Bezier::Linear {
+                    p0: Point2::new(0.0, 0.0),
+                    p1: Point2::new(-1.25, 1.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-1.25, 1.0),
+                    p1: Point2::new(-2.5, 0.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-2.5, 0.0),
+                    p1: Point2::new(-3.75, 1.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-3.75, 1.0),
+                    p1: Point2::new(-5.0, 0.0),
+                },
+            ],
+        );
 
-        let curve1 = Curve::from_bezier_list(vec![
-            Bezier::Linear {
-                p0: Point2::new(0.0, 0.0),
-                p1: Point2::new(-1.25, 1.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-1.25, 1.0),
-                p1: Point2::new(-2.5, 0.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-2.5, 0.0),
-                p1: Point2::new(-3.75, 1.0),
-            },
-            Bezier::Linear {
-                p0: Point2::new(-3.75, 1.0),
-                p1: Point2::new(-5.0, 0.0),
-            },
-        ]);
+        let curve1 = Ingredient::new(
+            String::from("firebell"),
+            0.0,
+            vec![
+                Bezier::Linear {
+                    p0: Point2::new(0.0, 0.0),
+                    p1: Point2::new(-1.25, 1.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-1.25, 1.0),
+                    p1: Point2::new(-2.5, 0.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-2.5, 0.0),
+                    p1: Point2::new(-3.75, 1.0),
+                },
+                Bezier::Linear {
+                    p0: Point2::new(-3.75, 1.0),
+                    p1: Point2::new(-5.0, 0.0),
+                },
+            ],
+        );
 
         // let path = Path::new(Point2::ZERO, vec![curve0, curve1], vec![1.0, 1.0]);
         let mut path = Path::new(Point2::ZERO, vec![curve0, curve1], vec![0.75, 0.75]);
