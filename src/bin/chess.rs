@@ -24,26 +24,26 @@ type Move = (bool, (usize, usize));
 
 impl Piece {
     // the bool represents whether the move captures or not
-    pub fn iter_possible_moves(
-        &self,
-        pos: (usize, usize),
-        board: &Board,
-        last_move: Move,
-    ) -> impl Iterator<Item = Move> {
-        match self.piece_type {
-            PieceType::Pawn => {
-                let flip = if self.color == Color::Black { 1 } else { -1 };
-                for offset in [(0, 1), (1, 1), (-1, 1)] {}
-                // ((pos.1 == 1 && self.color == Color::Black)
-                //     || (pos.1 == 6 && self.color == Color::White))
-            }
-            PieceType::Knight => todo!(),
-            PieceType::Rook => todo!(),
-            PieceType::Bishop => todo!(),
-            PieceType::Queen => todo!(),
-            PieceType::King => todo!(),
-        }
-    }
+    // pub fn iter_possible_moves(
+    //     &self,
+    //     pos: (usize, usize),
+    //     board: &Board,
+    //     last_move: Move,
+    // ) -> impl Iterator<Item = Move> {
+    //     match self.piece_type {
+    //         PieceType::Pawn => {
+    //             let flip = if self.color == Color::Black { 1 } else { -1 };
+    //             for offset in [(0, 1), (1, 1), (-1, 1)] {}
+    //             // ((pos.1 == 1 && self.color == Color::Black)
+    //             //     || (pos.1 == 6 && self.color == Color::White))
+    //         }
+    //         PieceType::Knight => todo!(),
+    //         PieceType::Rook => todo!(),
+    //         PieceType::Bishop => todo!(),
+    //         PieceType::Queen => todo!(),
+    //         PieceType::King => todo!(),
+    //     }
+    // }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -55,40 +55,40 @@ impl Board {
         Board([
             [
                 Some(Piece {
-                    color: Black,
+                    color: Color::Black,
                     piece_type: PieceType::Rook,
                 }),
                 Some(Piece {
-                    color: Black,
+                    color: Color::Black,
                     piece_type: PieceType::Knight,
                 }),
                 Some(Piece {
-                    color: Black,
+                    color: Color::Black,
                     piece_type: PieceType::Bishop,
                 }),
                 Some(Piece {
-                    color: Black,
+                    color: Color::Black,
                     piece_type: PieceType::Queen,
                 }),
                 Some(Piece {
-                    color: Black,
+                    color: Color::Black,
                     piece_type: PieceType::King,
                 }),
                 Some(Piece {
-                    color: Black,
+                    color: Color::Black,
                     piece_type: PieceType::Bishop,
                 }),
                 Some(Piece {
-                    color: Black,
+                    color: Color::Black,
                     piece_type: PieceType::Knight,
                 }),
                 Some(Piece {
-                    color: Black,
+                    color: Color::Black,
                     piece_type: PieceType::Rook,
                 }),
             ],
             [Some(Piece {
-                color: Black,
+                color: Color::Black,
                 piece_type: PieceType::Pawn,
             }); 8],
             [None; 8],
@@ -96,40 +96,40 @@ impl Board {
             [None; 8],
             [None; 8],
             [Some(Piece {
-                color: White,
+                color: Color::White,
                 piece_type: PieceType::Pawn,
             }); 8],
             [
                 Some(Piece {
-                    color: White,
+                    color: Color::White,
                     piece_type: PieceType::Rook,
                 }),
                 Some(Piece {
-                    color: White,
+                    color: Color::White,
                     piece_type: PieceType::Knight,
                 }),
                 Some(Piece {
-                    color: White,
+                    color: Color::White,
                     piece_type: PieceType::Bishop,
                 }),
                 Some(Piece {
-                    color: White,
+                    color: Color::White,
                     piece_type: PieceType::Queen,
                 }),
                 Some(Piece {
-                    color: White,
+                    color: Color::White,
                     piece_type: PieceType::King,
                 }),
                 Some(Piece {
-                    color: White,
+                    color: Color::White,
                     piece_type: PieceType::Bishop,
                 }),
                 Some(Piece {
-                    color: White,
+                    color: Color::White,
                     piece_type: PieceType::Knight,
                 }),
                 Some(Piece {
-                    color: White,
+                    color: Color::White,
                     piece_type: PieceType::Rook,
                 }),
             ],
@@ -140,7 +140,7 @@ impl Board {
         // later appearances of pieces overwrite earlier appearances in the `pieces` Vec
         let mut inner_board = [[None; 8]; 8];
         for (piece, (x, y)) in &pieces {
-            inner_board[*y as usize][*x as usize] = Some(piece);
+            inner_board[*y as usize][*x as usize] = Some(*piece);
         }
         Board(inner_board)
     }

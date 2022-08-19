@@ -1,10 +1,15 @@
 extern crate line_drawing;
 extern crate minifb;
 
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+
 use lib::flatland::{Point2, Vec2};
+use lib::spectral::BOUNDED_VISIBLE_RANGE;
 use lib::tonemap::{sRGB, Tonemapper};
 use lib::trace::{Bounds1D, Bounds2D};
-use lib::{rgb_to_u32, Film, SingleWavelength};
+use lib::{hsv_to_rgb, rgb_to_u32, Film, SingleWavelength};
 
 use math::XYZColor;
 #[allow(unused_imports)]
@@ -13,6 +18,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOption
 use packed_simd::f32x2;
 use rand::prelude::*;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 const WINDOW_WIDTH: usize = 800;
 const WINDOW_HEIGHT: usize = 800;
@@ -23,7 +29,7 @@ enum DrawMode {
     Bresenham,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Deserialize, Serialize)]
 enum Bezier {
     Linear {
         p0: Point2,
@@ -65,9 +71,54 @@ impl Bezier {
     }
 }
 
+#[derive(Clone, Debug)]
+enum IngredientType {
+    Fire,
+    Air,
+    Earth,
+    Water,
+}
+
+impl From<Point2> for IngredientType {
+    fn from(point: Point2) -> Self {
+        const PI: f32 = std::f32::consts::PI;
+        let [x, y]: [f32; 2] = point.0.into();
+        let angle = y.atan2(x) / PI;
+        // angle is now -1 to 1. 0 represents 100% to the right
+        match angle {
+            _ if angle.abs() < 0.25 => IngredientType::Water,
+            _ if angle.abs() > 0.75 => IngredientType::Fire,
+            _ if angle > 0.0 => IngredientType::Air,
+            _ if angle < 0.0 => IngredientType::Earth,
+            _ => {
+                unreachable!()
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
+enum MetadataVariant {
+    Float(f32),
+    String(String),
+    IngredientType(IngredientType),
+    None,
+}
+
+impl Default for MetadataVariant {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[derive(Clone, Default)]
+struct Metadata(HashMap<String, MetadataVariant>);
+
+#[derive(Clone, Deserialize, Serialize)]
 struct Curve {
     pub list: Vec<Bezier>,
+    #[serde(skip)]
+    metadata: Metadata,
 }
 
 impl Curve {
@@ -81,7 +132,10 @@ impl Curve {
                 bezier1.beginning()
             );
         }
-        Curve { list }
+        Curve {
+            list,
+            metadata: Metadata(HashMap::new()),
+        }
     }
 
     pub fn eval(&self, t: f32) -> Point2 {
@@ -94,12 +148,18 @@ impl Curve {
         // for i in 0..bin {
         //     point += Vec2::from_raw(self.list[i].end().0);
         // }
-        // let point = self.list[bin].eval(adjusted_t);
-        self.list[bin].eval(adjusted_t)
+        // point += Vec2(self.list[bin].eval(adjusted_t).0);
+        let point = self.list[bin].eval(adjusted_t);
+        point
     }
 
     pub fn eval_vec(&self, t: f32) -> Vec2 {
         Vec2::from_raw(self.eval(t).0)
+    }
+
+    pub fn tag(mut self, key: String, val: MetadataVariant) -> Self {
+        self.metadata.0.insert(key, val);
+        self
     }
 }
 
@@ -107,7 +167,7 @@ struct Path {
     // path is made up of curve fragments
     // each curve fragment is a curve + some max "time" for each fragment.
     pub fragments: Vec<(Curve, f32)>,
-    // we also need the current "time", and the "time" after which we switch to a new fragment.
+    // we also need the current "time", and the end "time" for this fragment after which we switch to a new fragment.
     pub current_time: f32,
     pub current_base_position: Point2,
     pub current_base_time: f32,
@@ -177,11 +237,15 @@ impl Path {
 #[derive(Copy, Clone)]
 struct Scout {
     pub pos: Point2,
+    color: f32,
 }
 
 impl Scout {
-    pub fn new() -> Self {
-        Scout { pos: Point2::ZERO }
+    pub fn new(color: f32) -> Self {
+        Scout {
+            pos: Point2::ZERO,
+            color,
+        }
     }
 
     pub fn update(&mut self, dv: Vec2) {
@@ -199,6 +263,109 @@ impl Scout {
     pub fn reset(&mut self) {
         self.pos = Point2::ZERO;
     }
+}
+
+fn parse_point(string: &str) -> Option<Point2> {
+    let pt = string.split_once(",").map(|(a, b)| {
+        (
+            a.trim().parse::<f32>().unwrap(),
+            b.trim().parse::<f32>().unwrap(),
+        )
+    });
+    pt.map(|e| Point2(f32x2::from([e.0, e.1])))
+}
+
+fn parse_ingredients_05<P>(filepath: P) -> Result<Vec<(String, Curve)>, ()>
+where
+    P: std::convert::AsRef<std::path::Path>,
+{
+    let mut file = File::open(filepath).unwrap();
+    let mut buf = String::new();
+    file.read_to_string(&mut buf).map_err(|_| {})?;
+    let mut lines = buf.lines();
+    // chomp head(er) off
+    let _ = lines.next();
+
+    let mut ingredients = Vec::new();
+    loop {
+        let ingredient_header = lines.next();
+        let price_header = lines.next();
+        let length_header = lines.next();
+        let end_point_header = lines.next();
+        let path = lines.next();
+
+        if let (Some(name), Some(path)) = (ingredient_header, path) {
+            let name = &name.split(":").nth(1).unwrap()[1..];
+            print!("parsing {}: ", name);
+            let curve_data = &path[16..];
+            let curve_segments = curve_data.split("C ").collect::<Vec<_>>();
+
+            let mut point = Point2::ZERO;
+            let mut data: Vec<Bezier> = Vec::new();
+            for curve_segment in curve_segments {
+                let point_count = curve_segment.chars().filter(|c| *c == ',').count();
+                let bezier;
+                let mut points = curve_segment
+                    .split(" ")
+                    .filter(|e| *e != "")
+                    .collect::<Vec<_>>();
+                match points.len() + 1 {
+                    2 => {
+                        let p1 = parse_point(points.pop().unwrap()).unwrap();
+                        let p0 = point;
+
+                        bezier = Bezier::Linear { p0, p1 };
+                        point = p1;
+                    }
+                    3 => {
+                        let p2 = parse_point(points.pop().unwrap()).unwrap();
+                        let p1 = parse_point(points.pop().unwrap()).unwrap();
+                        let p0 = point;
+                        bezier = Bezier::Quadratic { p0, p1, p2 };
+                        point = p2;
+                    }
+                    4 => {
+                        let p3 = parse_point(points.pop().unwrap()).unwrap();
+                        let p2 = parse_point(points.pop().unwrap()).unwrap();
+                        let p1 = parse_point(points.pop().unwrap()).unwrap();
+                        let p0 = point;
+                        bezier = Bezier::Cubic { p0, p1, p2, p3 };
+                        point = p3;
+                    }
+                    _ => {
+                        panic!(
+                            "panik!, points len was {}, points was {:?}",
+                            points.len(),
+                            points
+                        );
+                    }
+                }
+                data.push(bezier);
+            }
+
+            #[rustfmt::skip]
+            let end_point = parse_point(
+                end_point_header
+                    .map(|s| s.split(": "))
+                    .map(|mut s| s.nth(1)).flatten()
+                    .map(|s| s.trim_start_matches('(').trim_end_matches(')'))
+                    .unwrap(),
+            ).unwrap();
+            let ingredient_type = IngredientType::from(end_point);
+            println!("done! type was {:?}", ingredient_type);
+            ingredients.push((
+                String::from(name),
+                Curve::from_bezier_list(data).tag(
+                    String::from(""),
+                    MetadataVariant::IngredientType(ingredient_type),
+                ),
+            ));
+        } else {
+            break;
+        }
+    }
+
+    Ok(ingredients)
 }
 
 fn main() {
@@ -226,8 +393,6 @@ fn main() {
     let width = film.width;
     let height = film.height;
 
-    // let frame_dt = 6944.0 / 1000000.0;
-
     let relative_view_bounds =
         Bounds2D::new(Bounds1D::new(-20.0, 20.0), Bounds1D::new(20.0, -20.0));
     let (_box_width, _box_height) = (
@@ -235,30 +400,20 @@ fn main() {
         relative_view_bounds.y.span() / height as f32,
     );
 
-    let max_ingredient_id = 4;
+    // a Path is made up of curve fragments
+    // a path is parameterized by some time t: f32
+    // various effects can occur during Path traversal, including:
+    // * Dilution(start_time: f32, distance: f32): pushes the current position towards the origin by some distance, and rotating back to normal if the bottle is at all rotated
+    // * Whirlpool dragging: rotates the current position around a point while also pushing it towards the spiral center
+    // * Drag patches: changes how much the position moves per unit time. i.e. in a drag patch, an ingredient's path will effectively be scaled down by 2 while the position is inside the patch.
+    // * sun salt and moon salt (f32: radians): rotates the bottle and the path around the bottle. a rotation of 2pi radians requires 1000 salt. moon salt rotates counter clockwise, and sun salt clockwise.
 
-    let mut view_offset = Point2::new(0.0, 0.0);
+    let mut view_offset = Vec2::new(0.0, 0.0);
     let mut draw_mode = DrawMode::Midpoint;
-    let mut selected_ingredient = 0usize;
+    let mut selected_ingredient = 5usize;
 
-    let ingredients = vec![Curve::from_bezier_list(vec![
-        Bezier::Linear {
-            p0: Point2::new(0.0, 0.0),
-            p1: Point2::new(-1.25, 1.0),
-        },
-        Bezier::Linear {
-            p0: Point2::new(-1.25, 1.0),
-            p1: Point2::new(-2.5, 0.0),
-        },
-        Bezier::Linear {
-            p0: Point2::new(-2.5, 0.0),
-            p1: Point2::new(-3.75, 1.0),
-        },
-        Bezier::Linear {
-            p0: Point2::new(-3.75, 1.0),
-            p1: Point2::new(-5.0, 0.0),
-        },
-    ])];
+    let ingredients = parse_ingredients_05("data/potioncraft_ingredients_0.5.txt").unwrap();
+    let max_ingredient_id = ingredients.len();
 
     let grind_levels = vec![(0.5f32, 1.0f32)];
 
@@ -266,16 +421,25 @@ fn main() {
     let mut path_terminators = Vec::new();
     let mut grind_level = 0.0f32;
 
-    path_curves.push(ingredients[0].clone());
+    path_curves.push(ingredients[3].1.clone());
     path_terminators.push(1.0);
 
     let mut path = Path::new(Point2::ZERO, path_curves.clone(), path_terminators.clone());
     let mut pos = Point2::ZERO;
 
-    let mut scouts = vec![Scout::new(); 1000];
+    // let mut scouts = vec![Scout::new(); 1000];
+    let mut scouts = Vec::new();
+    for _ in 0..1000 {
+        // let color = hsv_to_rgb((random::<f32>() * 360.0) as usize, 1.0, 1.0);
+        // let color = rgb_to_u32(color.0, color.1, color.2);
+        let color = BOUNDED_VISIBLE_RANGE.sample(random::<f32>());
+        scouts.push(Scout::new(color));
+    }
     let mut scouts_clone = scouts.clone();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        let mut reset_scouts = false;
+        let mut reset_screen = false;
         let keys = window.get_keys_pressed(KeyRepeat::Yes);
         let config_move = if window.is_key_down(Key::NumPadPlus) {
             1.0
@@ -284,85 +448,117 @@ fn main() {
         } else {
             0.0
         };
-        for key in keys.unwrap_or(vec![]) {
+        for key in keys {
             match key {
                 Key::Tab => {
                     // change selected ingredient
                     selected_ingredient += 1;
-                    if selected_ingredient > max_ingredient_id {
+                    if selected_ingredient >= max_ingredient_id {
                         selected_ingredient = 0;
                     }
+                    println!(
+                        "selected ingredient is {}, name of {}",
+                        selected_ingredient, &ingredients[selected_ingredient].0
+                    );
                 }
                 Key::Space => {
                     // add selected ingredient to the pot (path)
-                    path_curves.push(ingredients[selected_ingredient].clone());
-                    let grind_bounds = grind_levels[selected_ingredient];
+                    path_curves.push(ingredients[selected_ingredient].1.clone());
+                    // let grind_bounds = grind_levels[selected_ingredient];
+                    let grind_bounds = (0.0, 1.0);
                     path_terminators
                         .push(Bounds1D::new(grind_bounds.0, grind_bounds.1).lerp(grind_level));
                     grind_level = 0.0;
-                    scouts.iter_mut().for_each(|e| e.reset());
+                    reset_scouts = true;
+                    reset_screen = true;
                 }
                 Key::G => {
                     // grind selected ingredient.
-                    grind_level += 0.01;
+                    grind_level += 0.05;
                     if grind_level > 1.0 {
                         grind_level = 1.0;
                     }
+                    println!("grind level is {}", grind_level);
                 }
                 Key::Up => {
                     // move view Up
-                    view_offset.0 = view_offset.0 + f32x2::new(0.0, 0.1);
+                    view_offset += Vec2(f32x2::new(0.0, 0.1));
+                    reset_screen = true;
+                    reset_scouts = true;
                 }
                 Key::Down => {
                     // move view Down
-                    view_offset.0 = view_offset.0 + f32x2::new(0.0, -0.1);
+                    view_offset += Vec2(f32x2::new(0.0, -0.1));
+                    reset_screen = true;
+                    reset_scouts = true;
                 }
                 Key::Left => {
                     // move view Left
-                    view_offset.0 = view_offset.0 + f32x2::new(-0.1, 0.0);
+                    view_offset += Vec2(f32x2::new(-0.1, 0.0));
+                    reset_screen = true;
+                    reset_scouts = true;
                 }
                 Key::Right => {
                     // move view Right
-                    view_offset.0 = view_offset.0 + f32x2::new(0.1, 0.0);
+                    view_offset += Vec2(f32x2::new(0.1, 0.0));
+                    reset_screen = true;
+                    reset_scouts = true;
                 }
                 Key::R => {
-                    // reset all scouts
-                    scouts.iter_mut().for_each(|e| e.reset());
-                    scouts_clone = scouts.clone();
+                    //reset ingredients to only the selected one
+                    path_curves.clear();
+                    path_terminators.clear();
+                    path_curves.push(ingredients[selected_ingredient].1.clone());
+                    // let grind_bounds = grind_levels[selected_ingredient];
+                    let grind_bounds = (0.0, 1.0);
+                    path_terminators
+                        .push(Bounds1D::new(grind_bounds.0, grind_bounds.1).lerp(grind_level));
+                    grind_level = 0.0;
+                    reset_scouts = true;
+                    reset_screen = true;
                 }
                 Key::Q => {
-                    pos = Point2::ZERO;
-                    path = Path::new(Point2::ZERO, path_curves.clone(), path_terminators.clone());
-                    scouts.iter_mut().for_each(|e| e.reset());
-                    scouts_clone = scouts.clone();
-                    film.buffer.fill(XYZColor::BLACK);
+                    // reset position and all scouts, and clear the screen
+                    reset_scouts = true;
+                    reset_screen = true;
                 }
                 _ => {}
             }
         }
+        if reset_scouts {
+            scouts.iter_mut().for_each(|e| e.reset());
+            scouts_clone = scouts.clone();
+        }
+        if reset_screen {
+            pos = Point2::ZERO;
+            path = Path::new(Point2::ZERO, path_curves.clone(), path_terminators.clone());
+
+            film.buffer.fill(XYZColor::BLACK);
+        }
 
         path.advance(0.01);
         let dv = path.current_position() - pos;
-        println!("{:?}", scouts[0].pos);
+        // println!("{:?}", scouts[0].pos);
 
         pos += dv;
         scouts.iter_mut().for_each(|e| e.update(dv));
 
         for (i, scout) in scouts.iter().enumerate() {
             // let dp = scout.pos - scouts_clone[i].pos;
-            let (px0, py0) = (
-                (WINDOW_WIDTH as f32 * (scout.pos.x() - relative_view_bounds.x.lower)
-                    / relative_view_bounds.x.span()) as usize,
-                (WINDOW_HEIGHT as f32 * (scout.pos.y() - relative_view_bounds.y.lower)
-                    / relative_view_bounds.y.span()) as usize,
-            );
-            film.buffer[py0 as usize * width + px0 as usize] =
-                XYZColor::from(SingleWavelength::new(550.0, 10.0.into()));
-            if false {
+            // let pos = scout.pos() - view_offset;
+            // let (px0, py0) = (
+            //     (WINDOW_WIDTH as f32 * (pos.x() - relative_view_bounds.x.lower)
+            //         / relative_view_bounds.x.span()) as usize,
+            //     (WINDOW_HEIGHT as f32 * (pos.y() - relative_view_bounds.y.lower)
+            //         / relative_view_bounds.y.span()) as usize,
+            // );
+            // film.buffer[py0 as usize * width + px0 as usize] +=
+            //     XYZColor::from(SingleWavelength::new(scout.color, 10.0.into()));
+            if true {
                 let line = (
-                    scouts_clone[i].pos,
-                    scout.pos,
-                    XYZColor::from(SingleWavelength::new(550.0, 1.0.into())),
+                    scouts_clone[i].pos - view_offset,
+                    scout.pos - view_offset,
+                    XYZColor::from(SingleWavelength::new(scout.color, 1.0.into())),
                 );
                 let (px0, py0) = (
                     (WINDOW_WIDTH as f32 * (line.0.x() - relative_view_bounds.x.lower)
@@ -382,7 +578,7 @@ fn main() {
                     if px0 as usize >= WINDOW_WIDTH || py0 as usize >= WINDOW_HEIGHT {
                         continue;
                     }
-                    film.buffer[py0 as usize * width + px0 as usize] += line.2;
+                    film.buffer[py0 as usize * width + px0 as usize] = line.2;
                     continue;
                 }
                 let b = (dx as f32).hypot(dy as f32) / (dx.abs().max(dy.abs()) as f32);
@@ -433,12 +629,13 @@ fn main() {
                                 continue;
                             }
                             assert!(!b.is_nan(), "{} {}", dx, dy);
-                            film.buffer[y as usize * width + x as usize] = line.2;
+                            film.buffer[y as usize * width + x as usize] += line.2;
                         }
                     }
                 }
             }
         }
+
         scouts_clone = scouts.clone();
 
         let srgb_tonemapper = sRGB::new(&film, 1.0);

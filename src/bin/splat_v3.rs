@@ -38,9 +38,7 @@ fn main() {
         f32x4::splat(0.0),
     )));
 
-    let total_pixels = film_width * film_height;
-
-    let num_threads = 1;
+    let num_splatting_threads = 1;
 
     let (tx, rx) = bounded(250000);
     let rx = Arc::new(Mutex::new(rx));
@@ -49,7 +47,7 @@ fn main() {
     let clone = light_film.clone();
 
     let mut txs: Vec<Sender<(usize, Simd<[f32; 4]>)>> = Vec::new();
-    for _ in 0..num_threads {
+    for _ in 0..num_splatting_threads {
         let arctex = clone.clone();
         let stop_clone = stop_signal.clone();
         let (tx, rx) = bounded(250000);
@@ -94,7 +92,7 @@ fn main() {
         loop {
             for (x, y, color) in rx.try_iter() {
                 let pidx = y * film_width + x;
-                let thread_id = pidx % num_threads;
+                let thread_id = pidx % num_splatting_threads;
                 let tx: &Sender<(usize, Simd<[f32; 4]>)> = &txs[thread_id];
                 tx.send((pidx, color)).unwrap();
 
@@ -102,7 +100,7 @@ fn main() {
             }
             if let Ok((x, y, color)) = rx.recv_timeout(Duration::from_millis(200)) {
                 let pidx = y * film_width + x;
-                let thread_id = pidx % num_threads;
+                let thread_id = pidx % num_splatting_threads;
                 let tx: &Sender<(usize, Simd<[f32; 4]>)> = &txs[thread_id];
                 tx.send((pidx, color)).unwrap();
                 ctr += 1;
@@ -118,8 +116,8 @@ fn main() {
     join_handles.push(dispatch_thread);
 
     let now = Instant::now();
-
-    (0..100000000).into_par_iter().for_each(|_| {
+    let total_samples = 100_000_000usize;
+    (0..total_samples).into_par_iter().for_each(|_| {
         let (x, y) = (
             (random::<f32>() * 2160.0) as usize,
             (random::<f32>() * 2160.0) as usize,
@@ -134,7 +132,7 @@ fn main() {
             .expect("send should have succeeded");
     });
 
-    // for _ in 0..100000000 {
+    // for _ in 0..total_samples {
     //     let (x, y) = (
     //         (random::<f32>() * 2160.0) as usize,
     //         (random::<f32>() * 2160.0) as usize,
@@ -158,7 +156,8 @@ fn main() {
     }
 
     let duration2 = now.elapsed().as_millis();
-    println!("{}ms for joining", duration2);
+    println!("{}ms for joining (and splatting)", duration2);
+    println!("{} per second", total_samples * 1000 / duration2 as usize);
 
     {
         let film = light_film.lock().unwrap();

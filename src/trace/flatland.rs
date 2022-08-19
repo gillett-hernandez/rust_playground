@@ -1,5 +1,9 @@
 #[allow(unused_imports)]
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
+use serde::{
+    de::{self, Deserialize, SeqAccess, Visitor},
+    Serialize,
+};
 
 // use crate::parse::curves::{load_ior_and_kappa, load_multiple_csv_rows};
 use crate::spectral::{SpectralPowerDistributionFunction, SPD};
@@ -16,6 +20,45 @@ use std::{
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Point2(pub f32x2);
+
+impl<'de> Deserialize<'de> for Point2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Point2Visitor;
+        impl<'de> Visitor<'de> for Point2Visitor {
+            type Value = Point2;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("struct Point2")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let f0 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let f1 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                Ok(Point2(f32x2::new(f0, f1)))
+            }
+        }
+        const FIELDS: &'static [&'static str] = &[""];
+        deserializer.deserialize_struct("Point2", FIELDS, Point2Visitor)
+    }
+}
+
+impl Serialize for Point2 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_seq([self.0.extract(0), self.0.extract(1)].iter())
+    }
+}
 
 impl Point2 {
     pub const fn new(x: f32, y: f32) -> Point2 {
@@ -129,7 +172,6 @@ impl Vec2 {
         Vec2(v)
     }
     pub const ZERO: Vec2 = Vec2::from_raw(f32x2::splat(0.0));
-    pub const MASK: f32x2 = f32x2::new(1.0, 1.0);
     pub const X: Vec2 = Vec2::new(1.0, 0.0);
     pub const Y: Vec2 = Vec2::new(0.0, 1.0);
     pub fn from_axis(axis: Axis) -> Vec2 {
@@ -243,7 +285,7 @@ impl Sub for Vec2 {
 
 impl From<f32> for Vec2 {
     fn from(s: f32) -> Vec2 {
-        Vec2::from_raw(f32x2::splat(s) * Vec2::MASK)
+        Vec2::from_raw(f32x2::splat(s))
     }
 }
 

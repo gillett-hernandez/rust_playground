@@ -364,10 +364,6 @@ fn main() {
         std::mem::swap(&mut pheromone_buffer, &mut pheromone_swap);
 
         for (i, pixel) in buffer.iter_mut().enumerate() {
-            // let pheromone_scalar = tonemap_greyscale(
-            //     10.0 * pheromone_buffer[i].extract(selected_view)
-            //         / max_pheromone.extract(selected_view),
-            // );
 
             *pixel = rgb_to_u32(
                 crush(tonemap_greyscale(

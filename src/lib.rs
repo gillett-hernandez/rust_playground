@@ -1,4 +1,3 @@
-
 #[macro_use]
 extern crate packed_simd;
 
@@ -13,6 +12,8 @@ pub use trace::*;
 
 use nalgebra::{Matrix3, Vector3};
 use packed_simd::f32x4;
+
+use minifb::{Key, Window, WindowOptions};
 
 pub fn gaussian(x: f64, alpha: f64, mu: f64, sigma1: f64, sigma2: f64) -> f64 {
     let sqrt = (x - mu) / (if x < mu { sigma1 } else { sigma2 });
@@ -130,6 +131,31 @@ pub fn blit_circle(film: &mut Film<u32>, radius: f32, x: usize, y: usize, c: u32
                 / pixel_y_size,
         );
         attempt_write(film, new_px as usize, new_py as usize, c);
+    }
+}
+
+pub fn window_loop<F>(
+    width: usize,
+    height: usize,
+    max_framerate: usize,
+    options: WindowOptions,
+    mut func: F,
+) where
+    F: FnMut(&Window, &mut Vec<u32>, usize, usize) -> (),
+{
+    let mut window = Window::new("Window", width, height, options).unwrap();
+    window.limit_update_rate(Some(std::time::Duration::from_micros(
+        (1000000 / max_framerate) as u64,
+    )));
+
+    let mut film = Film::new(width, height, 0u32);
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        film.buffer.fill(0u32);
+        func(&window, &mut film.buffer, width, height);
+
+        window
+            .update_with_buffer(&film.buffer, width, height)
+            .unwrap();
     }
 }
 

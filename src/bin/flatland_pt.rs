@@ -166,7 +166,7 @@ fn main() {
         } else {
             0.0
         };
-        for key in keys.unwrap_or(vec![]) {
+        for key in keys {
             match key {
                 Key::E => {
                     exposure_bias += config_move;

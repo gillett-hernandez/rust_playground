@@ -46,6 +46,7 @@ impl Particle {
         self.vy = self.vy / scale;
     }
     pub fn update(&mut self, dt: f32) {
+        // super basic solver
         self.vx += self.ax * dt;
         self.vy += self.ay * dt;
         self.x += self.vx * dt;
@@ -146,23 +147,25 @@ fn main() {
     let mut particles: Vec<Particle> = Vec::new();
     let num_particles = 700;
 
+    // gravity is broken in this model, because this model kinda sucks.
+    let grav = 0.0;
     let phi = random::<f32>() * std::f32::consts::TAU;
-    let mag = random::<f32>() * 0.3 + 0.9;
+    let mag = random::<f32>() * 0.3 + 0.2;
     let particle = Particle::new(
-        100.5,
+        50.5,
         0.05,
         0.5,
         0.5,
         mag * phi.cos(),
         mag * phi.sin(),
         0.0,
-        0.0,
+        grav,
     );
 
     particles.push(particle);
     for i in 0..num_particles - 1 {
-        let _phi = random::<f32>() * std::f32::consts::TAU;
-        let _mag = random::<f32>() * 0.0 + 0.4;
+        let phi = random::<f32>() * std::f32::consts::TAU;
+        let mag = random::<f32>() * 0.0 + 0.1;
         let r = random::<f32>() * 0.003 + 0.003;
         let particle = loop {
             let x = random::<f32>() * (1.0 - 2.0 * r) + r;
@@ -172,12 +175,12 @@ fn main() {
                 r,
                 x,
                 y,
-                // mag * phi.cos(),
-                -(0.5 - y),
-                0.5 - x,
-                // mag * phi.sin(),
+                mag * phi.cos(),
+                mag * phi.sin(),
+                // -(0.5 - y),
+                // 0.5 - x,
                 0.0,
-                0.0,
+                grav,
             );
             for other in particles[0..i].iter() {
                 if (other.y - particle.y).hypot(other.x - particle.x)
@@ -277,6 +280,7 @@ fn main() {
             .for_each(|e| e.update(collision_time - t));
         t = collision_time;
         if event_time < 0.0 {
+            // frame sync
             events.push((-1.0, t + frame_dt, 0, None));
 
             let mut sum_energy = 0.0;
@@ -448,11 +452,15 @@ fn main() {
                 }
                 None => {
                     new_particle.time = t;
+                    let epsilon = 0.01;
+                    let velocity_steal_const = 0.7f32;
+                    let velocity_gain_const = velocity_steal_const.recip();
+
                     // force = mass * acceleration
                     // pressure is force divided by area. since "area" in this simulation is 2d, it would be force divided by the "surface" of the container, or the perimeter of the container.
                     // acceleration or force and be calculated as an elastic collision.
                     // acceleration is such that the particles' momentum in the X direction changes from from -m * vx to m * vx. thus the momentum changes by 2 * m * vx in 1 frame. thus the acceleration is 2 * m * vx / dt. we will assume and scale such that dt = 1, however.
-                    if particle.x - particle.radius < 0.001 {
+                    if particle.x - particle.radius <= epsilon {
                         // near left wall (x = 0)
                         // println!(
                         //     "bouncing horizontal, {}, {}, {}",
@@ -461,15 +469,25 @@ fn main() {
                         let force = 2.0 * particle.mass * new_particle.vx.abs() / frame_dt;
                         mean_pressure = moving_average_constant * mean_pressure
                             + (1.0 - moving_average_constant) * force;
-                        new_particle.vx *= -1.0;
-                    } else if particle.x + particle.radius > 1.0 - 0.001 {
+                        if new_particle.vx < 0.0 {
+                            // moving left, then reflect
+                            new_particle.vx *= -velocity_steal_const;
+                        } else {
+                            new_particle.vx += 0.01;
+                        }
+                    } else if particle.x + particle.radius >= 1.0 - epsilon {
                         // near right wall (x = 1)
                         let force = 2.0 * particle.mass * new_particle.vx.abs() / frame_dt;
                         mean_pressure = moving_average_constant * mean_pressure
                             + (1.0 - moving_average_constant) * force;
-                        new_particle.vx *= -1.0
+                        if new_particle.vx > 0.0 {
+                            // moving right, then reflect
+                            new_particle.vx *= -velocity_steal_const;
+                        } else {
+                            new_particle.vx -= 0.01;
+                        }
                     }
-                    if particle.y - particle.radius < 0.001 {
+                    if particle.y - particle.radius <= epsilon {
                         // near top wall (y = 0)
 
                         // println!(
@@ -479,13 +497,26 @@ fn main() {
                         let force = 2.0 * particle.mass * new_particle.vy.abs() / frame_dt;
                         mean_pressure = moving_average_constant * mean_pressure
                             + (1.0 - moving_average_constant) * force;
-                        new_particle.vy *= -1.0;
-                    } else if particle.y + particle.radius > 1.0 - 0.001 {
+                        if new_particle.vy < 0.0 {
+                            // moving up, then reflect
+                            new_particle.vy *= -velocity_steal_const;
+                        } else {
+                            // push towards inside
+                            new_particle.vy += 0.01;
+                        }
+                    } else if particle.y + particle.radius >= 1.0 - epsilon {
                         // near bottom wall (y = 1)
                         let force = 2.0 * particle.mass * new_particle.vy.abs() / frame_dt;
                         mean_pressure = moving_average_constant * mean_pressure
                             + (1.0 - moving_average_constant) * force;
-                        new_particle.vy *= -1.0;
+                        if particle.vy > 0.0 {
+                            let u = particle.x - 0.5;
+                            if u.abs() < 0.1 {
+                                new_particle.vy *= -velocity_gain_const;
+                            } else {
+                                new_particle.vy *= -velocity_steal_const;
+                            }
+                        }
                     }
                 }
             }

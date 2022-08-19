@@ -185,7 +185,7 @@ fn main() {
         // .reduce(|| Vec2::ZERO, |accum, item| accum + item);
         while window.is_open() && !window.is_key_down(Key::Escape) {
             let keys = window.get_keys_pressed(KeyRepeat::Yes);
-            for key in keys.unwrap_or(vec![]) {
+            for key in keys {
                 match key {
                     Key::Space => {
                         freq *= 1.01;
