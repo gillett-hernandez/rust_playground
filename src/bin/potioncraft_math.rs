@@ -563,6 +563,7 @@ fn solve_recursive_salt_costs(salts: &[&str], ingredients: &mut HashMap<String, 
     let inverse = matrix.try_inverse().unwrap();
     let solution = inverse * matrix![1.0, 1.0, 1.0, 1.0].transpose();
     for (i, salt) in salts.iter().enumerate() {
+        println!("solved salt {}, cost = {}", salt, solution[i + 1]);
         *ingredients.get_mut(*salt).unwrap() = Cost {
             gold: solution[1 + i],
             ..Default::default()
@@ -600,6 +601,7 @@ struct Opt {
 
 fn main() {
     let opts: Opt = StructOpt::from_args();
+    let metric = Metric::from(&opts.metric).unwrap();
     let threads = 1;
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)

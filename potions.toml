@@ -1,285 +1,287 @@
-[potions.VoidSaltReagent4.ingredients]
-Mudshroom = 1
+[potions.Dexterity.ingredients]
 WitchMushroom = 1
-Thornstick = 1
-Featherbloom = 1
-Firebell = 2
-Waterbloom = 2
-ThunderThistle = 1
 Coldleaf = 1
-MadMushroom = 2
-[potions.Levitation.ingredients]
-WitchMushroom = 1
-FoggyParasol = 1
-Waterbloom = 1
-Featherbloom = 2
-MadMushroom = 1
-Bloodthorn = 2
+Watercap = 1
 [potions.Inspiration.ingredients]
-Bloodthorn = 1
-FoggyParasol = 2
-MoonSalt = 699
-CloudCrystal = 1
 Mageberry = 2
+CloudCrystal = 1
+FoggyParasol = 2
 Windbloom = 6
+Bloodthorn = 1
+MoonSalt = 699
 [potions.CitrinitasReagent2.ingredients]
+Icefruit = 1
+DreamBeet = 1
 Flameweed = 3
 HealersHeather = 1
+Waterbloom = 2
 SulphurShelf = 1
-Icefruit = 1
+Thornstick = 1
+[potions.Swiftness.ingredients]
+Windbloom = 4
+[potions.Levitation.ingredients]
+Waterbloom = 1
+MadMushroom = 1
+WitchMushroom = 1
+FoggyParasol = 1
+Bloodthorn = 2
+Featherbloom = 2
+[potions.Poison.ingredients]
+GoblinMushroom = 1
+StinkMushroom = 1
+[potions.Strength.ingredients]
+Mudshroom = 1
+Weirdshroom = 1
+[potions.Slow.ingredients]
+Terraria = 1
+Mudshroom = 1
+Coldleaf = 1
+Poopshroom = 1
+[potions.VoidSaltReagent4.ingredients]
+MadMushroom = 2
+WitchMushroom = 1
+Coldleaf = 1
+ThunderThistle = 1
 Waterbloom = 2
 Thornstick = 1
-DreamBeet = 1
-[potions.Light.ingredients]
-Firebell = 3
-Lavaroot = 1
-[potions.AlbedoReagent1.ingredients]
-MagmaMorel = 1
-Watercap = 1
-FoggyParasol = 1
-Featherbloom = 1
-Spellbloom = 1
-ShadowChanterelle = 1
-Windbloom = 2
-Flameweed = 1
-[potions.AlbedoReagent2.ingredients]
-Watercap = 1
-Windbloom = 4
-HealersHeather = 2
-[potions.CitrinitasReagent4.ingredients]
-Thornstick = 1
-Icefruit = 1
-WitchMushroom = 2
-Firebell = 1
-Weirdshroom = 1
-Windbloom = 2
-FireCitrine = 1
-LustMushroom = 2
-Flameweed = 3
-Featherbloom = 1
-[potions.MoonSaltReagent4.ingredients]
-Firebell = 1
-SulphurShelf = 1
-Bloodthorn = 1
-Marshroom = 1
-Windbloom = 2
-Featherbloom = 3
-Watercap = 1
-FireCitrine = 1
-[potions.AlbedoReagent4.ingredients]
-Windbloom = 5
-Whirlweed = 1
-HealersHeather = 2
-MadMushroom = 1
-FrostSapphire = 1
-ThunderThistle = 1
-Firebell = 1
-Waterbloom = 1
-[potions.Hallucinations.ingredients]
-ShadowChanterelle = 1
-Windbloom = 2
-Bloodthorn = 1
-MoonSalt = 480
-Coldleaf = 1
-Mageberry = 2
-Spellbloom = 1
-[potions.Slow.ingredients]
+Firebell = 2
 Mudshroom = 1
-Terraria = 1
-Coldleaf = 1
-Poopshroom = 1
+Featherbloom = 1
 [potions.VoidSaltReagent2.ingredients]
+Terraria = 1
+DryadsSaddle = 1
 HealersHeather = 1
 Mudshroom = 1
-DryadsSaddle = 1
-Terraria = 1
-[potions.AlbedoReagent3.ingredients]
-Featherbloom = 3
-KrakenMushroom = 1
-Watercap = 2
-Windbloom = 2
-[potions.MoonSaltReagent6.ingredients]
-FoggyParasol = 1
-KrakenMushroom = 1
-Poopshroom = 1
-Mageberry = 1
-SulphurShelf = 1
-Spellbloom = 1
-Lifeleaf = 1
-Weirdshroom = 1
-HealersHeather = 2
-ShadowChanterelle = 1
-Thornstick = 2
-ThunderThistle = 1
-[potions.Strength.ingredients]
-Weirdshroom = 1
-Mudshroom = 1
-[potions.MoonSaltReagent2.ingredients]
-Spellbloom = 2
-Boombloom = 1
-ShadowChanterelle = 1
 [potions.Sleep.ingredients]
 Watercap = 1
 Coldleaf = 1
 HealersHeather = 1
-[potions.MoonSaltReagent1.ingredients]
-FoggyParasol = 1
-Spellbloom = 1
-Windbloom = 3
-GraspingRoot = 1
-Waterbloom = 2
-Goodberry = 1
-Bloodthorn = 2
-HealersHeather = 1
-MossShroom = 2
-[potions.VoidSaltReagent1.ingredients]
-Windbloom = 1
-Watercap = 1
-FoggyParasol = 1
-Featherbloom = 3
-[potions.Fire.ingredients]
-Firebell = 3
-[potions.MoonSaltReagent7.ingredients]
-PhantomSkirt = 1
-HealersHeather = 2
-Boombloom = 1
-Mageberry = 1
-Windbloom = 3
-FoggyParasol = 1
-[potions.Necromancy.ingredients]
+[potions.MoonSaltReagent3.ingredients]
 Mudshroom = 1
-EarthPyrite = 2
-StinkMushroom = 4
-MagmaMorel = 1
-HairyBanana = 1
-[potions.Invisibility.ingredients]
+LustMushroom = 1
 Watercap = 1
-Windbloom = 2
-Featherbloom = 3
-[potions.Poison.ingredients]
-GoblinMushroom = 1
-StinkMushroom = 1
-[potions.StoneSkin.ingredients]
-Marshroom = 1
-Mudshroom = 1
-[potions.CitrinitasReagent3.ingredients]
-Terraria = 1
-HairyBanana = 1
-Firebell = 2
-LustMushroom = 1
-Flameweed = 2
-Thornstick = 1
-GraspingRoot = 1
-DreamBeet = 1
-[potions.FrostDefense.ingredients]
-MagmaMorel = 1
-Lavaroot = 1
-HairyBanana = 1
-DragonPepper = 1
-[potions.Explosion.ingredients]
-MadMushroom = 3
-[potions.MoonSaltReagent5.ingredients]
-FoggyParasol = 1
-MossShroom = 1
-HealersHeather = 1
-LustMushroom = 1
-Tangleweed = 1
-Spellbloom = 1
-PhantomSkirt = 1
-[potions.CitrinitasReagent1.ingredients]
-GraspingRoot = 1
-Mageberry = 1
-Flameweed = 1
-DragonPepper = 1
-MagmaMorel = 1
-[potions.Swiftness.ingredients]
-Windbloom = 4
-[potions.Everything.ingredients]
-Goldthorn = 1
-Icefruit = 1
-BloodRuby = 1
-FoggyParasol = 1
-Lavaroot = 1
-Terraria = 1
-HairyBanana = 1
 Featherbloom = 1
-Windbloom = 1
-RainbowCap = 1
-GoblinMushroom = 1
-Mudshroom = 1
-MagmaMorel = 1
-LifeCrystal = 1
-Weirdshroom = 1
-Flameweed = 1
-Bloodthorn = 1
-MadMushroom = 1
-Mageberry = 1
-StinkMushroom = 1
-TerrorBud = 1
-FrostSapphire = 1
-Goodberry = 1
-PhantomSkirt = 1
 Spellbloom = 1
-FireCitrine = 1
-SulphurShelf = 1
-Watercap = 1
-FableBismuth = 1
-WitchMushroom = 1
-GraveTruffle = 1
-Marshroom = 1
-DragonPepper = 1
-CloudCrystal = 1
-Lifeleaf = 1
-Thornstick = 1
-LustMushroom = 1
-EvergreenFern = 1
-EarthPyrite = 1
-ShadowChanterelle = 1
-Waterbloom = 1
-GraspingRoot = 1
 Whirlweed = 1
-DreamBeet = 1
-MossShroom = 1
-Boombloom = 1
-ThunderThistle = 1
-Coldleaf = 1
-Tangleweed = 1
-DruidsRosemary = 1
-HealersHeather = 1
-Firebell = 1
-KrakenMushroom = 1
-PlagueStibnite = 1
-Poopshroom = 1
-Fluffbloom = 1
-ArcaneCrystal = 1
-DryadsSaddle = 1
-[potions.Frost.ingredients]
-Waterbloom = 3
-[potions.VoidSaltReagent3.ingredients]
-Terraria = 1
-Boombloom = 1
-LustMushroom = 1
-Thornstick = 1
-[potions.Dexterity.ingredients]
-Coldleaf = 1
-WitchMushroom = 1
-Watercap = 1
+Windbloom = 1
+[potions.Light.ingredients]
+Lavaroot = 1
+Firebell = 3
 [potions.Sight.ingredients]
 ShadowChanterelle = 3
 Watercap = 1
-[potions.MoonSaltReagent3.ingredients]
+[potions.Invisibility.ingredients]
+Windbloom = 2
+Featherbloom = 3
 Watercap = 1
-Windbloom = 1
+[potions.CitrinitasReagent1.ingredients]
+Flameweed = 1
+GraspingRoot = 1
+MagmaMorel = 1
+Mageberry = 1
+DragonPepper = 1
+[potions.AlbedoReagent2.ingredients]
+Windbloom = 4
+HealersHeather = 2
+Watercap = 1
+[potions.MoonSaltReagent5.ingredients]
+MossShroom = 1
 Spellbloom = 1
-Mudshroom = 1
-Featherbloom = 1
+Tangleweed = 1
+FoggyParasol = 1
 LustMushroom = 1
+PhantomSkirt = 1
+HealersHeather = 1
+[potions.MoonSaltReagent2.ingredients]
+ShadowChanterelle = 1
+Boombloom = 1
+Spellbloom = 2
+[potions.AlbedoReagent4.ingredients]
+ThunderThistle = 1
+Windbloom = 5
+FrostSapphire = 1
+Waterbloom = 1
 Whirlweed = 1
+HealersHeather = 2
+MadMushroom = 1
+Firebell = 1
+[potions.CitrinitasReagent3.ingredients]
+Terraria = 1
+DreamBeet = 1
+HairyBanana = 1
+Thornstick = 1
+Firebell = 2
+Flameweed = 2
+LustMushroom = 1
+GraspingRoot = 1
+[potions.VoidSaltReagent3.ingredients]
+Boombloom = 1
+LustMushroom = 1
+Thornstick = 1
+Terraria = 1
+[potions.AlbedoReagent3.ingredients]
+KrakenMushroom = 1
+Watercap = 2
+Windbloom = 2
+Featherbloom = 3
+[potions.VoidSaltReagent1.ingredients]
+FoggyParasol = 1
+Featherbloom = 3
+Windbloom = 1
+Watercap = 1
+[potions.MoonSaltReagent4.ingredients]
+Marshroom = 1
+Bloodthorn = 1
+Windbloom = 2
+Featherbloom = 3
+FireCitrine = 1
+Firebell = 1
+Watercap = 1
+SulphurShelf = 1
+[potions.Frost.ingredients]
+Watercap = 1
+MoonSalt = 48
+Mageberry = 1
+[potions.StoneSkin.ingredients]
+Marshroom = 1
+Mudshroom = 1
+[potions.CitrinitasReagent4.ingredients]
+Flameweed = 3
+Featherbloom = 1
+Thornstick = 1
+FireCitrine = 1
+Windbloom = 2
+WitchMushroom = 2
+Firebell = 1
+Weirdshroom = 1
+Icefruit = 1
+LustMushroom = 2
+[potions.MoonSaltReagent7.ingredients]
+Boombloom = 1
+Mageberry = 1
+FoggyParasol = 1
+HealersHeather = 2
+Windbloom = 3
+PhantomSkirt = 1
+[potions.Explosion.ingredients]
+MadMushroom = 3
+[potions.AlbedoReagent1.ingredients]
+Windbloom = 2
+FoggyParasol = 1
+Watercap = 1
+Spellbloom = 1
+Featherbloom = 1
+Flameweed = 1
+ShadowChanterelle = 1
+MagmaMorel = 1
+[potions.Fire.ingredients]
+Firebell = 3
+[potions.Hallucinations.ingredients]
+ShadowChanterelle = 1
+MoonSalt = 480
+Mageberry = 2
+Coldleaf = 1
+Spellbloom = 1
+Windbloom = 2
+Bloodthorn = 1
+[potions.Necromancy.ingredients]
+StinkMushroom = 4
+Mudshroom = 1
+HairyBanana = 1
+MagmaMorel = 1
+EarthPyrite = 2
+[potions.MoonSaltReagent1.ingredients]
+Windbloom = 3
+HealersHeather = 1
+MossShroom = 2
+GraspingRoot = 1
+Goodberry = 1
+Spellbloom = 1
+FoggyParasol = 1
+Bloodthorn = 2
+Waterbloom = 2
+[potions.Everything.ingredients]
+DruidsRosemary = 1
+Thornstick = 1
+Featherbloom = 1
+DreamBeet = 1
+Windbloom = 1
+Bloodthorn = 1
+LustMushroom = 1
+WitchMushroom = 1
+HairyBanana = 1
+Goldthorn = 1
+HealersHeather = 1
+Flameweed = 1
+Lifeleaf = 1
+Goodberry = 1
+Weirdshroom = 1
+Terraria = 1
+Boombloom = 1
+MadMushroom = 1
+GraveTruffle = 1
+FireCitrine = 1
+DryadsSaddle = 1
+Marshroom = 1
+Poopshroom = 1
+RainbowCap = 1
+Fluffbloom = 1
+Tangleweed = 1
+SulphurShelf = 1
+EvergreenFern = 1
+DragonPepper = 1
+FrostSapphire = 1
+Firebell = 1
+KrakenMushroom = 1
+Lavaroot = 1
+ArcaneCrystal = 1
+PlagueStibnite = 1
+Watercap = 1
+Mudshroom = 1
+ShadowChanterelle = 1
+StinkMushroom = 1
+Mageberry = 1
+TerrorBud = 1
+GoblinMushroom = 1
+Waterbloom = 1
+LifeCrystal = 1
+CloudCrystal = 1
+FoggyParasol = 1
+GraspingRoot = 1
+Coldleaf = 1
+MagmaMorel = 1
+Icefruit = 1
+EarthPyrite = 1
+Spellbloom = 1
+Whirlweed = 1
+FableBismuth = 1
+MossShroom = 1
+PhantomSkirt = 1
+ThunderThistle = 1
+BloodRuby = 1
+[potions.MoonSaltReagent6.ingredients]
+FoggyParasol = 1
+Poopshroom = 1
+Mageberry = 1
+Weirdshroom = 1
+Spellbloom = 1
+KrakenMushroom = 1
+HealersHeather = 2
+ShadowChanterelle = 1
+Thornstick = 2
+ThunderThistle = 1
+SulphurShelf = 1
+Lifeleaf = 1
+[potions.FrostDefense.ingredients]
+DragonPepper = 1
+MagmaMorel = 1
+Lavaroot = 1
+HairyBanana = 1
 
 [secondary_ingredients]
-Albedo = ["Nigredo", "Frost", "Dexterity", "Mana", "Swiftness", "Invisibility", "AlbedoReagent1", "AlbedoReagent2", "AlbedoReagent3", "AlbedoReagent4"]
-VoidSalt = ["Nigredo", "VoidSaltReagent1", "VoidSaltReagent2", "VoidSaltReagent3", "VoidSaltReagent4", "Necromancy"]
 Nigredo = ["Strength", "StoneSkin", "Sleep", "Slow", "Poison"]
 Citrinitas = ["Albedo", "Light", "Explosion", "Fire", "FrostDefense", "CitrinitasReagent1", "CitrinitasReagent2", "CitrinitasReagent3", "CitrinitasReagent4"]
+Albedo = ["Nigredo", "Frost", "Dexterity", "Mana", "Swiftness", "Invisibility", "AlbedoReagent1", "AlbedoReagent2", "AlbedoReagent3", "AlbedoReagent4"]
 MoonSalt = ["Albedo", "Sight", "Levitation", "MoonSaltReagent1", "MoonSaltReagent2", "MoonSaltReagent3", "MoonSaltReagent4", "MoonSaltReagent5", "MoonSaltReagent6", "MoonSaltReagent7"]
+VoidSalt = ["Nigredo", "VoidSaltReagent1", "VoidSaltReagent2", "VoidSaltReagent3", "VoidSaltReagent4", "Necromancy"]
 SunSalt = ["Citrinitas"]
