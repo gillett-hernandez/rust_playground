@@ -18,17 +18,18 @@ nalgebra = "0.31.1"
 crossbeam = "0.8.2"
 parking_lot = "0.12.1"
 ordered-float = "3.0.0"
+num = "0.4.0"
 exr = "0.9.0"
-cpal = "0.13.5"
+cpal = "0.14.1"
 # pbr = "1.0.3"
 minifb = "0.23.0"
-statrs = "0.15.0"
+statrs = "0.16.0"
 math =  { git = "https://github.com/gillett-hernandez/rust_cg_math" }
 # wgpu = "0.7.0"
 winit = "0.27.1"
 line_drawing = "1.0.0"
 structopt = "0.3.26"
-clap = {version="3.2.16", features=["derive"]}
+clap = {version="4.0.32", features=["derive"]}
 linefeed = "0.6.0"
 
 

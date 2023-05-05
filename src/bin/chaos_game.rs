@@ -17,7 +17,7 @@ enum Filter {
     Box,
     Triangle,
     Gaussian(f32), // alpha
-    // Mitchell
+    // Mitchell // A, B where A + 2B = 1
     WindowedSinc(f32), // tau
 }
 

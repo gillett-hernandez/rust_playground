@@ -21,6 +21,10 @@ use std::{
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Point2(pub f32x2);
 
+
+
+
+
 impl<'de> Deserialize<'de> for Point2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
