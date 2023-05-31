@@ -1,10 +1,10 @@
 #![allow(unused, unused_imports)]
 
 use crate::film::Film;
-use math::XYZColor;
 
 extern crate exr;
 use exr::prelude::rgba_image::*;
+use math::prelude::*;
 use nalgebra::{Matrix3, Vector3};
 use packed_simd::f32x4;
 
@@ -49,7 +49,7 @@ impl sRGB {
         //     exposure_adjustment / max_luminance
         // );
         sRGB {
-            factor: (1.0 / max_luminance).min(1000000.0),
+            factor: (1.0f32 / max_luminance).min(1000000.0),
             exposure_adjustment,
             // gamma_adjustment,
         }

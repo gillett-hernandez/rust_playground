@@ -1,4 +1,4 @@
-use math::{Point3, Ray, Vec3};
+use math::prelude::*;
 #[derive(Copy, Clone, Debug)]
 pub struct SurfaceIntersectionData {
     pub time: f32,

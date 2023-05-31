@@ -1,16 +1,15 @@
 extern crate line_drawing;
 extern crate minifb;
 
-use lib::curves::{load_ior_and_kappa, load_multiple_csv_rows};
-use lib::spectral::{
-    InterpolationMode, BOUNDED_VISIBLE_RANGE,
-    EXTENDED_VISIBLE_RANGE, SPD,
-};
+use lib::parse::curves::{load_ior_and_kappa, load_multiple_csv_rows};
+// use lib::parse::{load_ior_and_kappa, load_multiple_csv_rows};
+use lib::spectral::{BOUNDED_VISIBLE_RANGE, EXTENDED_VISIBLE_RANGE};
 use lib::tonemap::{sRGB, Tonemapper};
-use lib::trace::{Bounds1D, Bounds2D, SingleWavelength};
+
 use lib::{rgb_to_u32, Film};
 
-use math::XYZColor;
+use math::prelude::*;
+
 #[allow(unused_imports)]
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 
@@ -55,7 +54,7 @@ fn main() {
 
     // let frame_dt = 6944.0 / 1000000.0;
 
-    let white = SPD::Linear {
+    let white = Curve::Linear {
         signal: vec![1.0],
         bounds: EXTENDED_VISIBLE_RANGE,
         mode: InterpolationMode::Linear,
@@ -74,12 +73,12 @@ fn main() {
         iter.next().unwrap().clone(),
         iter.next().unwrap().clone(),
     );
-    let black = SPD::Linear {
+    let black = Curve::Linear {
         signal: vec![0.0],
         bounds: EXTENDED_VISIBLE_RANGE,
         mode: InterpolationMode::Linear,
     };
-    let glass_eta = SPD::Cauchy { a: 1.5, b: 10000.0 };
+    let glass_eta = Curve::Cauchy { a: 1.5, b: 10000.0 };
     let (gold_ior, gold_kappa) =
         load_ior_and_kappa("data/curves/physical/gold.csv", |x: f32| x * 1000.0).unwrap();
     let scene = Scene::new(

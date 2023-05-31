@@ -6,9 +6,8 @@ use serde::{
 };
 
 // use crate::parse::curves::{load_ior_and_kappa, load_multiple_csv_rows};
-use crate::spectral::{SpectralPowerDistributionFunction, SPD};
+use math::prelude::*;
 // use crate::tonemap::{sRGB, Tonemapper};
-use math::Vec3;
 
 use packed_simd::{f32x2, f32x4};
 use rand::prelude::*;
@@ -20,10 +19,6 @@ use std::{
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Point2(pub f32x2);
-
-
-
-
 
 impl<'de> Deserialize<'de> for Point2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -725,22 +720,22 @@ fn eta_rel(eta_o: f32, eta_inner: f32, wi: Vec2) -> f32 {
 
 pub enum Material {
     Lambertian {
-        color: SPD,
+        color: Curve,
     },
     GGX {
-        eta: SPD,
-        kappa: SPD,
+        eta: Curve,
+        kappa: Curve,
         roughness: f32,
         permeable: bool,
         eta_o: f32,
     },
     DiffuseLight {
-        reflection_color: SPD,
-        emission_color: SPD,
+        reflection_color: Curve,
+        emission_color: Curve,
     },
     DiffuseDirectionalLight {
-        reflection_color: SPD,
-        emission_color: SPD,
+        reflection_color: Curve,
+        emission_color: Curve,
         direction: f32,
         radius: f32,
     },

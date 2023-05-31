@@ -1,9 +1,10 @@
 use std::f32::consts::TAU;
 
-use lib::{flatland::Vec2, rgb_to_u32, window_loop, Film, PI};
-use math::random;
+use lib::{flatland::Vec2, random, rgb_to_u32, window_loop, Film};
+
 use minifb::WindowOptions;
 use rayon::prelude::*;
+use std::f32::consts::PI;
 
 fn scale_factor(n: usize) -> f32 {
     let mut sum = 0.0f32;
@@ -68,7 +69,7 @@ fn main() {
         |_, buffer, width, height| {
             cursors.par_iter_mut().for_each(|cursor| {
                 // random process goes here
-                let sample = random();
+                let sample = random::<f32>();
 
                 let center = Vec2::new(0.5, 0.5);
 

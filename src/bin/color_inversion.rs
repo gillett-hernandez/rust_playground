@@ -1,8 +1,10 @@
+use lib::parse::curves::load_multiple_csv_rows;
+use lib::rgb_to_u32;
 use lib::tonemap::*;
 use lib::Film;
-use lib::{curves::load_multiple_csv_rows, rgb_to_u32};
-use math::spectral::Op;
-use math::*;
+use math::curves::Op;
+// use math::spectral::Op;
+use math::prelude::*;
 
 use minifb::*;
 use rayon::prelude::*;
@@ -11,9 +13,9 @@ const WINDOW_WIDTH: usize = 800;
 const WINDOW_HEIGHT: usize = 800;
 
 fn main() {
-    let invert = |spd: SPD| SPD::Machine {
+    let invert = |spd: Curve| Curve::Machine {
         seed: -1.0,
-        list: vec![(Op::Mul, spd), (Op::Add, SPD::Const(1.0))],
+        list: vec![(Op::Mul, spd), (Op::Add, Curve::Const(1.0))],
     };
 
     let mut window = Window::new(
@@ -30,7 +32,7 @@ fn main() {
     });
 
     let wavelength_bounds = Bounds1D::new(400.0, 800.0);
-    let spd = SPD::Exponential {
+    let spd = Curve::Exponential {
         signal: vec![
             (450.0, 20.0, 20.0, 0.3),
             (550.0, 20.0, 20.0, 0.6),

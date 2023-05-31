@@ -1,11 +1,9 @@
-#[macro_use]
-extern crate packed_simd;
-
 mod film;
 pub mod parse;
 pub mod trace;
 
 pub use film::Film;
+pub use math::prelude::*;
 pub use parse::*;
 pub use rand::prelude::*;
 pub use trace::*;
@@ -164,13 +162,13 @@ pub fn window_loop<F>(
 
 #[derive(Clone)]
 pub struct Texture4 {
-    pub curves: [CDF; 4],
+    pub curves: [CurveWithCDF; 4],
     pub texture: Film<f32x4>,
     pub interpolation_mode: InterpolationMode,
 }
 
 impl Texture4 {
-    // evaluate the 4 CDFs with the mixing ratios specified by the texture.
+    // evaluate the 4 CurveWithCDFs with the mixing ratios specified by the texture.
     // not clamped to 0 to 1, so that should be done by the callee
     pub fn eval_at(&self, lambda: f32, uv: (f32, f32)) -> f32 {
         // TODO: bilinear or bicubic texture interpolation/filtering
@@ -186,13 +184,13 @@ impl Texture4 {
 }
 #[derive(Clone)]
 pub struct Texture1 {
-    pub curve: CDF,
+    pub curve: CurveWithCDF,
     pub texture: Film<f32>,
     pub interpolation_mode: InterpolationMode,
 }
 
 impl Texture1 {
-    // evaluate the 4 CDFs with the mixing ratios specified by the texture.
+    // evaluate the 4 CurveWithCDFs with the mixing ratios specified by the texture.
     // not clamped to 0 to 1, so that should be done by the callee
     pub fn eval_at(&self, lambda: f32, uv: (f32, f32)) -> f32 {
         // TODO: bilinear or bicubic texture interpolation/filtering

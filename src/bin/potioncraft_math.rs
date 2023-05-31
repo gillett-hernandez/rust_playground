@@ -11,10 +11,11 @@ use std::ops::{AddAssign, Mul};
 use lib::flatland::{Point2, Vec2};
 use lib::spectral::BOUNDED_VISIBLE_RANGE;
 use lib::tonemap::{sRGB, Tonemapper};
-use lib::trace::{Bounds1D, Bounds2D};
+// use lib::trace::{Bounds1D, Bounds2D};
 use lib::{hsv_to_rgb, rgb_to_u32, Film, SingleWavelength};
 
-use math::XYZColor;
+// use math::XYZColor;
+use math::prelude::*;
 #[allow(unused_imports)]
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 

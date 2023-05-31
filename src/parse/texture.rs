@@ -2,6 +2,7 @@ use crate::film::Film;
 use crate::parse::curves::{parse_curve, CurveData};
 use crate::*;
 
+use math::spectral::EXTENDED_VISIBLE_RANGE;
 use packed_simd::f32x4;
 use serde::{Deserialize, Serialize};
 
@@ -73,12 +74,12 @@ pub fn select_channel(film: &Film<f32x4>, channel: usize) -> Film<f32> {
     }
 }
 
-fn convert_to_array(vec: Vec<CDF>) -> [CDF; 4] {
-    let mut arr: [CDF; 4] = [
-        CDF::default(),
-        CDF::default(),
-        CDF::default(),
-        CDF::default(),
+fn convert_to_array(vec: Vec<CurveWithCDF>) -> [CurveWithCDF; 4] {
+    let mut arr: [CurveWithCDF; 4] = [
+        CurveWithCDF::default(),
+        CurveWithCDF::default(),
+        CurveWithCDF::default(),
+        CurveWithCDF::default(),
     ];
     arr[0] = vec[0].clone();
     arr[1] = vec[1].clone();
@@ -90,7 +91,7 @@ fn convert_to_array(vec: Vec<CDF>) -> [CDF; 4] {
 pub fn parse_texture(texture: TextureData) -> Texture {
     match texture {
         TextureData::Texture1 { curve, filename } => {
-            let cdf: CDF = parse_curve(curve).into();
+            let cdf: CurveWithCDF = parse_curve(curve).to_cdf(EXTENDED_VISIBLE_RANGE, 100);
             Texture::Texture1(Texture1 {
                 curve: cdf,
                 texture: parse_bitmap(&filename),
@@ -98,10 +99,10 @@ pub fn parse_texture(texture: TextureData) -> Texture {
             })
         }
         TextureData::Texture4 { curves, filename } => {
-            let cdfs: [CDF; 4] = convert_to_array(
+            let cdfs: [CurveWithCDF; 4] = convert_to_array(
                 curves
                     .iter()
-                    .map(|curve| parse_curve(curve.clone()).into())
+                    .map(|curve| parse_curve(curve.clone()).to_cdf(EXTENDED_VISIBLE_RANGE, 100))
                     .collect(),
             );
             Texture::Texture4(Texture4 {

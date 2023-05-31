@@ -1,7 +1,5 @@
 use crate::random::random_cosine_direction;
-use math::{
-    Point3, Ray, Sample1D, Sample2D, SpectralPowerDistributionFunction, TangentFrame, Vec3, SPD,
-};
+use math::prelude::*;
 use std::f32::consts::PI;
 pub trait Material {
     fn bsdf(&self, lambda: f32, wi: Vec3, wo: Vec3) -> (f32, f32);
@@ -13,11 +11,11 @@ pub trait Material {
 
 #[derive(Clone)]
 pub struct ConstLambertian {
-    pub color: SPD,
+    pub color: Curve,
 }
 
 impl ConstLambertian {
-    pub fn new(color: SPD) -> ConstLambertian {
+    pub fn new(color: Curve) -> ConstLambertian {
         ConstLambertian { color }
     }
     pub const NAME: &'static str = "Lambertian";
@@ -46,11 +44,11 @@ unsafe impl Sync for ConstLambertian {}
 
 #[derive(Clone)]
 pub struct ConstFilm {
-    pub color: SPD,
+    pub color: Curve,
 }
 
 impl ConstFilm {
-    pub fn new(color: SPD) -> ConstFilm {
+    pub fn new(color: Curve) -> ConstFilm {
         ConstFilm { color }
     }
     pub const NAME: &'static str = "Film";
@@ -74,12 +72,12 @@ unsafe impl Sync for ConstFilm {}
 
 #[derive(Clone)]
 pub struct ConstDiffuseEmitter {
-    pub bounce_color: SPD,
-    pub emission_color: SPD,
+    pub bounce_color: Curve,
+    pub emission_color: Curve,
 }
 
 impl ConstDiffuseEmitter {
-    pub fn new(bounce_color: SPD, emission_color: SPD) -> ConstDiffuseEmitter {
+    pub fn new(bounce_color: Curve, emission_color: Curve) -> ConstDiffuseEmitter {
         ConstDiffuseEmitter {
             bounce_color,
             emission_color,
@@ -156,8 +154,8 @@ pub fn phase_hg(cos_theta: f32, g: f32) -> f32 {
 
 pub struct HenyeyGreensteinHomogeneous {
     pub g: f32,
-    pub sigma_t: SPD, // transmittance attenuation
-    pub sigma_s: SPD, // scattering attenuation
+    pub sigma_t: Curve, // transmittance attenuation
+    pub sigma_s: Curve, // scattering attenuation
 }
 
 impl Medium for HenyeyGreensteinHomogeneous {

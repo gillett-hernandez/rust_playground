@@ -1,5 +1,5 @@
 // use crate::random::*;
-use math::*;
+use math::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct ProjectiveCamera {
