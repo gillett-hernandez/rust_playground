@@ -6,7 +6,7 @@ pub use film::Film;
 pub use math::prelude::*;
 pub use parse::*;
 pub use rand::prelude::*;
-pub use trace::*;
+// pub use trace::{};
 
 use nalgebra::{Matrix3, Vector3};
 use packed_simd::f32x4;

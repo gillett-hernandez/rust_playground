@@ -1,7 +1,8 @@
 use std::f32::consts::TAU;
 
-use lib::{flatland::Vec2, random, rgb_to_u32, window_loop, Film};
+use lib::{random, rgb_to_u32, trace::flatland::Vec2, window_loop, Film};
 
+// use lib::trace::flatland::Vec2;
 use minifb::WindowOptions;
 use rayon::prelude::*;
 use std::f32::consts::PI;

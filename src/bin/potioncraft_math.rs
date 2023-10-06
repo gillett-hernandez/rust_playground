@@ -8,18 +8,22 @@ use std::fs::File;
 use std::io::Read;
 use std::ops::{AddAssign, Mul};
 
-use lib::flatland::{Point2, Vec2};
-use lib::spectral::BOUNDED_VISIBLE_RANGE;
-use lib::tonemap::{sRGB, Tonemapper};
-// use lib::trace::{Bounds1D, Bounds2D};
-use lib::{hsv_to_rgb, rgb_to_u32, Film, SingleWavelength};
+use lib::{
+    rgb_to_u32,
+    trace::{
+        flatland::{Point2, Vec2},
+        tonemap::{sRGB, Tonemapper},
+    },
+    Film, SingleWavelength,
+};
 
 // use math::XYZColor;
 use math::prelude::*;
+use math::spectral::BOUNDED_VISIBLE_RANGE;
 #[allow(unused_imports)]
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 
-use nalgebra::{matrix, Vector};
+use nalgebra::matrix;
 use packed_simd::f32x2;
 use rand::prelude::*;
 use rayon::prelude::*;

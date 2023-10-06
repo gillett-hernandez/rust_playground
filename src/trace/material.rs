@@ -1,4 +1,3 @@
-use crate::random::random_cosine_direction;
 use math::prelude::*;
 use std::f32::consts::PI;
 pub trait Material {

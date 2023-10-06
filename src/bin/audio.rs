@@ -328,9 +328,17 @@ fn main() {
                 }
             },
             err_fn,
+            None,
         ),
-        SampleFormat::I16 => panic!(),
-        SampleFormat::U16 => panic!(),
+        _ => panic!("unsupported sample format"),
+        // SampleFormat::I8 => todo!(),
+        // SampleFormat::I32 => todo!(),
+        // SampleFormat::I64 => todo!(),
+        // SampleFormat::U8 => todo!(),
+        // SampleFormat::U32 => todo!(),
+        // SampleFormat::U64 => todo!(),
+        // SampleFormat::F64 => todo!(),
+        // _ => todo!(),
     }
     .unwrap();
 
@@ -367,9 +375,9 @@ fn main() {
                 }
             },
             err_fn,
+            None,
         ),
-        SampleFormat::I16 => panic!(),
-        SampleFormat::U16 => panic!(),
+        _ => panic!("unsupported sample format"),
     }
     .unwrap();
 

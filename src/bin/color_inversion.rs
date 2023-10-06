@@ -1,9 +1,9 @@
 use lib::parse::curves::load_multiple_csv_rows;
 use lib::rgb_to_u32;
-use lib::tonemap::*;
+use lib::trace::tonemap::sRGB;
+use lib::trace::tonemap::Tonemapper;
 use lib::Film;
 use math::curves::Op;
-// use math::spectral::Op;
 use math::prelude::*;
 
 use minifb::*;

@@ -6,6 +6,10 @@ pub mod flatland;
 pub mod primitive;
 pub mod random;
 pub mod tonemap;
+pub use math::{
+    bounds::{Bounds1D, Bounds2D},
+    spectral::SingleWavelength,
+};
 
 pub use crate::film::Film;
 

@@ -1,15 +1,19 @@
 extern crate line_drawing;
 extern crate minifb;
 
-use lib::parse::curves::{load_ior_and_kappa, load_multiple_csv_rows};
-// use lib::parse::{load_ior_and_kappa, load_multiple_csv_rows};
-use lib::spectral::{BOUNDED_VISIBLE_RANGE, EXTENDED_VISIBLE_RANGE};
-use lib::tonemap::{sRGB, Tonemapper};
-
-use lib::{rgb_to_u32, Film};
+use lib::{
+    parse::curves::{load_ior_and_kappa, load_multiple_csv_rows},
+    rgb_to_u32,
+    trace::{
+        flatland::{Material, Point2, Ray2D, Scene, Shape, TangentFrame2D},
+        tonemap::{sRGB, Tonemapper},
+    },
+    Film,
+};
 
 use math::prelude::*;
 
+use math::spectral::{BOUNDED_VISIBLE_RANGE, EXTENDED_VISIBLE_RANGE};
 #[allow(unused_imports)]
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 
@@ -18,8 +22,6 @@ use rayon::prelude::*;
 
 const WINDOW_WIDTH: usize = 800;
 const WINDOW_HEIGHT: usize = 800;
-
-use lib::flatland::*;
 
 enum DrawMode {
     XiaolinWu,
