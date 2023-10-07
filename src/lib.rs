@@ -106,6 +106,11 @@ pub fn rgb_to_u32(r: u8, g: u8, b: u8) -> u32 {
     ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
+pub fn u32_to_rgb(px: u32) -> (u8, u8, u8) {
+    (((px >> 16) % 256) as u8, ((px >> 8) % 256) as u8, (px % 256) as u8)
+    // ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+}
+
 pub fn triple_to_u32(triple: (u8, u8, u8)) -> u32 {
     rgb_to_u32(triple.0, triple.1, triple.2)
 }
