@@ -1,36 +1,38 @@
 extern crate minifb;
 
+use itertools::Itertools;
 use minifb::{Key, MouseMode, Scale, Window, WindowOptions};
 use ordered_float::OrderedFloat;
 use rand::random;
 use rayon::prelude::*;
 
 use lib::{
-    blit_circle, hsv_to_rgb, rgb_to_u32,
-    trace::flatland::{Point2, Vec2},
-    triple_to_u32, u32_to_rgb, Film,
+    blit_circle, hsv_to_rgb, random_in_unit_sphere, random_on_unit_sphere, rgb_to_u32,
+    triple_to_u32, u32_to_rgb, Film, RandomSampler, Sampler, TangentFrame,
 };
+use math::prelude::{Point3, Vec3};
 use std::f32::consts::{PI, TAU};
 
 const STEPS: usize = 200;
+const GRAVITATIONAL_CONSTANT: f32 = 0.0001;
 
 #[derive(Copy, Clone, Debug)]
 struct Body {
-    pub p: Point2,
-    pub v: Vec2,
+    pub p: Point3,
+    pub v: Vec3,
     pub mass: f32,
     pub color: u32,
-    f_accum: Vec2,
+    f_accum: Vec3,
 }
 
 impl Body {
-    pub fn new(x: f32, y: f32, vx: f32, vy: f32, mass: f32, color: u32) -> Self {
+    pub fn new(p: Point3, v: Vec3, mass: f32, color: u32) -> Self {
         Body {
-            p: Point2::new(x, y),
-            v: Vec2::new(vx, vy),
+            p,
+            v,
             mass,
             color,
-            f_accum: Vec2::ZERO,
+            f_accum: Vec3::ZERO,
         }
     }
 
@@ -41,56 +43,74 @@ impl Body {
         let distance_squared = displacement.norm_squared();
         let mass_mult = self.mass * other.mass;
 
-        let force = 0.0001 * displacement.normalized() * mass_mult / distance_squared;
+        let force =
+            GRAVITATIONAL_CONSTANT * displacement.normalized() * mass_mult / distance_squared;
 
-        self.f_accum += force;
+        self.f_accum = self.f_accum + force;
     }
 
     pub fn update(&mut self, dt: f32) {
-        self.v += dt * self.f_accum / self.mass;
+        self.v = self.v + dt * self.f_accum / self.mass;
 
         self.p += self.v * dt;
 
-        self.f_accum = Vec2::ZERO;
+        self.f_accum = Vec3::ZERO;
     }
 }
 
 fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
     bodies.clear();
-    let mut collective_momentum = Vec2::new(0.0, 0.0);
-    {
-        let angle = TAU * random::<f32>();
-        // let speed = random::<f32>() * 1.0 + 0.5;
-        let speed = 0.0;
-        let (sin, cos) = angle.sin_cos();
+    let mut collective_momentum = Vec3::ZERO;
+
+    let mut sampler = RandomSampler::new();
+
+    let center_radius = 60.0;
+
+    for i in 0..(n - 1) {
+        let random_position_vector = random_on_unit_sphere(sampler.draw_2d());
+        let random_direction_vector = random_on_unit_sphere(sampler.draw_2d());
+
+        let speed = 0.01;
+
         let body = Body::new(
-            500.0 * (random::<f32>() - 0.5),
-            500.0 * (random::<f32>() - 0.5),
-            speed * sin,
-            speed * cos,
-            5000.0,
-            triple_to_u32(hsv_to_rgb(0, 0.0, 1.0)),
+            (center_radius * random_position_vector).into(),
+            random_direction_vector * speed,
+            1000000.0,
+            triple_to_u32(hsv_to_rgb(i * (360 - 1) / n, 1.0, 1.0)),
         );
 
-        collective_momentum += body.v * body.mass;
+        collective_momentum = collective_momentum + body.v * body.mass;
 
         bodies.push(body);
     }
-    for i in 0..(n - 1) {
+
+    {
+        let chosen_body = (random::<u32>() % 3) as usize;
         let angle = TAU * random::<f32>();
         // let speed = random::<f32>() * 1.0 + 0.5;
         let speed = 1.0;
         let (sin, cos) = angle.sin_cos();
+
+        let normal = random_on_unit_sphere(sampler.draw_2d());
+        let tangentframe = TangentFrame::from_normal(normal);
+
+        let reference_body = &bodies[chosen_body];
+
+        let orbit_radius = 35.0;
+
+        let local_velocity = Vec3::new(cos * speed, sin * speed, 0.0);
+
+        let velocity = tangentframe.to_world(&local_velocity);
+        // generate random rotation vector and angle to rotate the velocity around
+
         let body = Body::new(
-            500.0 * (random::<f32>() - 0.5),
-            500.0 * (random::<f32>() - 0.5),
-            speed * sin,
-            speed * cos,
-            5000000.0,
-            triple_to_u32(hsv_to_rgb(i * (360 - 1) / n, 1.0, 1.0)),
+            reference_body.p + normal * orbit_radius,
+            velocity,
+            1.0,
+            triple_to_u32(hsv_to_rgb(0, 0.0, 1.0)),
         );
 
-        collective_momentum += body.v * body.mass;
+        collective_momentum = collective_momentum + body.v * body.mass;
 
         bodies.push(body);
     }
@@ -104,8 +124,8 @@ fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
 }
 
 fn main() {
-    const WINDOW_WIDTH: usize = 1600;
-    const WINDOW_HEIGHT: usize = 800;
+    const WINDOW_WIDTH: usize = 1000;
+    const WINDOW_HEIGHT: usize = 1000;
     let mut window = Window::new(
         "N-Body",
         WINDOW_WIDTH,
@@ -118,16 +138,6 @@ fn main() {
     .unwrap_or_else(|e| {
         panic!("{}", e);
     });
-    let mut buffer = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, 0u32);
-
-    // Limit to max ~144 fps update rate
-    let max_dt = 0.1 / STEPS as f32;
-    let mut dt = 0.1 / STEPS as f32;
-    window.limit_update_rate(Some(std::time::Duration::from_micros(6944)));
-
-    window
-        .update_with_buffer(&buffer.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
-        .unwrap();
 
     if false {
         let ypp = |y: f32| -y;
@@ -202,6 +212,19 @@ fn main() {
         return;
     }
 
+    let mut buffer = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, 0u32);
+
+    let mut viewport_scale = 250.0;
+    // Limit to max ~144 fps update rate
+    let max_dt = 1.0 / STEPS as f32;
+    let mut speed_factor = 0.3f32;
+    let mut dt = max_dt;
+    window.limit_update_rate(Some(std::time::Duration::from_micros(6944)));
+
+    window
+        .update_with_buffer(&buffer.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
+        .unwrap();
+
     let n = 4;
     let mut bodies: Vec<Body> = Vec::new();
 
@@ -209,7 +232,10 @@ fn main() {
 
     let mut swap = bodies.clone();
 
-    let window_bounds = ((-1200.0, -1200.0), (1200.0, 1200.0));
+    let mut window_bounds = (
+        (-viewport_scale, -viewport_scale),
+        (viewport_scale, viewport_scale),
+    );
 
     let mut framecounter = 0;
     let mut metaframe_min_dt = max_dt;
@@ -218,9 +244,9 @@ fn main() {
     while window.is_open() && !window.is_key_down(Key::Escape) {
         buffer.buffer.par_iter_mut().for_each(|px| {
             let (mut r, mut g, mut b) = u32_to_rgb(*px);
-            r = (r as f32 * 9.0 / 10.0) as u8;
-            g = (g as f32 * 9.0 / 10.0) as u8;
-            b = (b as f32 * 9.0 / 10.0) as u8;
+            r = (r as f32 * 99.0 / 100.0).floor() as u8;
+            g = (g as f32 * 99.0 / 100.0).floor() as u8;
+            b = (b as f32 * 99.0 / 100.0).floor() as u8;
             *px = triple_to_u32((r, g, b));
         });
 
@@ -229,41 +255,86 @@ fn main() {
             initialize_bodies(&mut bodies, n);
         }
 
+        if window.is_key_pressed(Key::LeftBracket, minifb::KeyRepeat::No) {
+            speed_factor /= 1.1;
+            println!("new speed factor = {}", speed_factor);
+        }
+        if window.is_key_pressed(Key::RightBracket, minifb::KeyRepeat::No) {
+            speed_factor *= 1.1;
+            println!("new speed factor = {}", speed_factor);
+        }
+
+        if window.is_key_pressed(Key::Q, minifb::KeyRepeat::No) {
+            viewport_scale /= 1.1;
+            window_bounds = (
+                (-viewport_scale, -viewport_scale),
+                (viewport_scale, viewport_scale),
+            );
+            println!("new viewport scale = {}", viewport_scale);
+        }
+        if window.is_key_pressed(Key::E, minifb::KeyRepeat::No) {
+            viewport_scale *= 1.1;
+            window_bounds = (
+                (-viewport_scale, -viewport_scale),
+                (viewport_scale, viewport_scale),
+            );
+            println!("new viewport scale = {}", viewport_scale);
+        }
+
         let mut frame_min_dt = max_dt;
         let mut frame_elapsed_sim_time = 0.0;
+
         for _ in 0..STEPS {
-            let min_dist_squared = swap
+            let max_speed_squared = swap
                 .par_iter_mut()
                 .enumerate()
                 .map(|(idx, new)| {
-                    // update diver angle based on controller, then update forces on diver and speed
                     let mut body = bodies[idx];
 
-                    let mut min_dist_squared = f32::INFINITY;
+                    // let mut min_dist_squared = f32::INFINITY;
                     for (other_idx, other) in bodies.iter().enumerate() {
                         if other_idx == idx {
                             continue;
                         }
                         body.update_force(other);
-                        min_dist_squared = min_dist_squared.min((body.p - other.p).norm_squared());
+                        // min_dist_squared = min_dist_squared.min((body.p - other.p).norm_squared());
                     }
                     body.update(dt);
 
                     *new = body;
-                    OrderedFloat::from(min_dist_squared)
+                    OrderedFloat::from(body.v.norm_squared())
+                })
+                .max()
+                .unwrap();
+            frame_elapsed_sim_time += dt;
+
+            let swap_len = swap.len();
+            let min_dist = (0..swap_len)
+                .into_iter()
+                .cartesian_product((0..swap_len).into_iter())
+                .par_bridge()
+                .map(|(i0, i1)| {
+                    if i0 >= i1 {
+                        return OrderedFloat::from(f32::INFINITY);
+                    }
+                    let b0 = &swap[i0];
+                    let b1 = &swap[i1];
+                    OrderedFloat::from((b0.p - b1.p).norm())
                 })
                 .min()
                 .unwrap();
-            frame_elapsed_sim_time += dt;
-            // the smaller the min_dist, the smaller the dt
-            dt = max_dt * (1.0 - (-10.0 * min_dist_squared.0).exp());
+
+            // ~~the smaller the min_dist, the smaller the dt~~
+            // the greater the speed, the smaller the dt
+
+            dt = max_dt * (1.0 + speed_factor * max_speed_squared.0).recip();
             frame_min_dt = frame_min_dt.min(dt);
             std::mem::swap(&mut bodies, &mut swap);
         }
         metaframe_min_dt = metaframe_min_dt.min(frame_min_dt);
         metaframe_elapsed_sim_time += frame_elapsed_sim_time;
 
-        for body in bodies.iter() {
+        for (idx, body) in bodies.iter().enumerate() {
             let (px, py) = (
                 ((body.p.x() - window_bounds.0 .0) / (window_bounds.1 .0 - window_bounds.0 .0)
                     * WINDOW_WIDTH as f32) as usize,
@@ -278,8 +349,11 @@ fn main() {
             if px >= WINDOW_WIDTH || py >= WINDOW_HEIGHT {
                 continue;
             }
-            // buffer[py * WINDOW_WIDTH + px] = body.color;
-            blit_circle(&mut buffer, 1.0, px, py, body.color);
+            if idx == 3 {
+                buffer.buffer[py * WINDOW_WIDTH + px] = body.color;
+            } else {
+                blit_circle(&mut buffer, 1.0, px, py, body.color);
+            }
         }
         window
             .update_with_buffer(&buffer.buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
