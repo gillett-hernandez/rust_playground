@@ -1,7 +1,7 @@
 extern crate minifb;
 
 use itertools::Itertools;
-use minifb::{Key, MouseMode, Scale, Window, WindowOptions};
+use minifb::{Key, MouseButton, MouseMode, Scale, Window, WindowOptions};
 use num::{traits::real::Real, Num};
 use ordered_float::OrderedFloat;
 use rand::random;
@@ -9,10 +9,13 @@ use rayon::prelude::*;
 
 use lib::{
     blit_circle, hsv_to_rgb, random_in_unit_sphere, random_on_unit_sphere, rgb_to_u32,
-    triple_to_u32, u32_to_rgb, Film, RandomSampler, Sampler, TangentFrame,
+    trace::flatland::Vec2, triple_to_u32, u32_to_rgb, Film, RandomSampler, Sampler, TangentFrame,
 };
 use math::prelude::{Point3, Vec3};
-use std::f32::consts::{PI, TAU};
+use std::{
+    collections::VecDeque,
+    f32::consts::{FRAC_PI_2, PI, TAU},
+};
 
 const STEPS: usize = 200;
 const GRAVITATIONAL_CONSTANT: f32 = 0.0001;
@@ -31,6 +34,72 @@ where
     new_x
 }
 
+enum CameraMode {
+    Projective,
+    Orthographic,
+}
+
+struct OrbitCamera {
+    pub mode: CameraMode,
+    pub origin: Point3,
+    pub direction: Vec3,
+    pub view_scale: f32,
+    azimuthal_angle: f32,
+    zenithal_angle: f32,
+}
+
+impl OrbitCamera {
+    pub fn new(mode: CameraMode, origin: Point3, direction: Vec3, view_scale: f32) -> Self {
+        OrbitCamera {
+            mode,
+            origin,
+            direction,
+            view_scale,
+            azimuthal_angle: 0.0,
+            zenithal_angle: 0.0,
+        }
+    }
+
+    pub fn orbit(&mut self, orbit_by: Vec2) {
+        let horizontal_orbit = orbit_by.x();
+        self.azimuthal_angle -= horizontal_orbit;
+        self.azimuthal_angle %= TAU;
+
+        let vertical_orbit = orbit_by.y();
+        self.zenithal_angle =
+            (self.zenithal_angle + vertical_orbit).clamp(-FRAC_PI_2 * 0.99, FRAC_PI_2 * 0.99);
+
+        let (a_sin, a_cos) = self.azimuthal_angle.sin_cos();
+        let (z_sin, z_cos) = self.zenithal_angle.sin_cos();
+
+        self.direction = Vec3::new(a_cos * z_cos, a_sin * z_cos, z_sin);
+    }
+
+    pub fn project(&self, point: Point3) -> (f32, f32) {
+        let worldspace_point = point - self.origin;
+        const UP: Vec3 = Vec3::Z;
+        let right = UP.cross(self.direction).normalized();
+        let relative_up = right.cross(self.direction);
+        let tf = TangentFrame::new(right, relative_up, self.direction);
+        let (x, y) = match self.mode {
+            CameraMode::Projective => todo!(),
+            CameraMode::Orthographic => {
+                let local = tf.to_local(&worldspace_point);
+                (local.x(), local.y())
+            }
+        };
+
+        let (u, v) = (
+            (0.5 - x / (2.0 * self.view_scale)),
+            (0.5 - y / (2.0 * self.view_scale)),
+        );
+
+        // println!("{} {}, {} -> {} {}", x, y, self.view_scale, u, v);
+
+        (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0))
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 struct Body {
     pub p: Point3,
@@ -38,16 +107,18 @@ struct Body {
     pub mass: f32,
     pub color: u32,
     f_accum: Vec3,
+    radius: f32,
 }
 
 impl Body {
-    pub fn new(p: Point3, v: Vec3, mass: f32, color: u32) -> Self {
+    pub fn new(p: Point3, v: Vec3, mass: f32, color: u32, radius: f32) -> Self {
         Body {
             p,
             v,
             mass,
             color,
             f_accum: Vec3::ZERO,
+            radius,
         }
     }
 
@@ -73,6 +144,34 @@ impl Body {
     }
 }
 
+struct InactiveBody {
+    pub p: Point3,
+    pub color: u32,
+    pub radius: f32,
+    pub brightness: f32,
+}
+
+impl From<&Body> for InactiveBody {
+    fn from(value: &Body) -> Self {
+        InactiveBody {
+            p: value.p,
+            color: value.color,
+            radius: value.radius,
+            brightness: 1.0,
+        }
+    }
+}
+
+impl InactiveBody {
+    pub fn adjusted_color(&self) -> u32 {
+        let (mut r, mut g, mut b) = u32_to_rgb(self.color);
+        r = (r as f32 * self.brightness).floor() as u8;
+        g = (g as f32 * self.brightness).floor() as u8;
+        b = (b as f32 * self.brightness).floor() as u8;
+        triple_to_u32((r, g, b))
+    }
+}
+
 fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
     bodies.clear();
     let mut collective_momentum = Vec3::ZERO;
@@ -86,13 +185,14 @@ fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
         let random_position_vector = random_on_unit_sphere(sampler.draw_2d());
         let random_direction_vector = random_on_unit_sphere(sampler.draw_2d());
 
-        let speed = 0.01;
+        let speed = 1.0;
 
         let body = Body::new(
             (center_radius * random_position_vector).into(),
             random_direction_vector * speed,
             1000000.0,
             triple_to_u32(hsv_to_rgb(i * (360 - 1) / n, 1.0, 1.0)),
+            1.0,
         );
 
         collective_momentum = collective_momentum + body.v * body.mass;
@@ -125,6 +225,7 @@ fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
             velocity,
             1.0,
             triple_to_u32(hsv_to_rgb(0, 0.0, 1.0)),
+            0.0,
         );
 
         collective_momentum = collective_momentum + body.v * body.mass;
@@ -147,6 +248,7 @@ fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
 fn main() {
     const WINDOW_WIDTH: usize = 1000;
     const WINDOW_HEIGHT: usize = 1000;
+
     let mut window = Window::new(
         "N-Body",
         WINDOW_WIDTH,
@@ -208,7 +310,6 @@ fn main() {
 
     let mut buffer = Film::new(WINDOW_WIDTH, WINDOW_HEIGHT, 0u32);
 
-    let mut viewport_scale = 250.0;
     // Limit to max ~144 fps update rate
     let max_dt = 1.0 / STEPS as f32;
     let mut speed_factor = 0.3f32;
@@ -224,25 +325,28 @@ fn main() {
 
     initialize_bodies(&mut bodies, n);
 
+    let mut body_trails: Vec<VecDeque<InactiveBody>> = bodies
+        .iter()
+        .map(|_| VecDeque::with_capacity(100))
+        .collect_vec();
+
     let mut swap = bodies.clone();
 
-    let mut window_bounds = (
-        (-viewport_scale, -viewport_scale),
-        (viewport_scale, viewport_scale),
-    );
+    // let mut view_angle = random_on_unit_sphere(RandomSampler::new().draw_2d());
+    // let (mut view_azimuthal, mut view_zenithal) = (0.0, 0.0);
+    let mut camera = OrbitCamera::new(CameraMode::Orthographic, Point3::ORIGIN, Vec3::X, 250.0);
+    let camera_orbit_factor = 0.01;
+
+    let mut last_mouse_pos = None;
 
     let mut framecounter = 0;
     let mut metaframe_min_dt = max_dt;
     let mut metaframe_elapsed_sim_time = 0.0;
+    let mut elapsed_sim_time = 0.0;
+    let mut elapsed_sim_time_ticker = 0.0;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        buffer.buffer.par_iter_mut().for_each(|px| {
-            let (mut r, mut g, mut b) = u32_to_rgb(*px);
-            r = (r as f32 * 99.0 / 100.0).floor() as u8;
-            g = (g as f32 * 99.0 / 100.0).floor() as u8;
-            b = (b as f32 * 99.0 / 100.0).floor() as u8;
-            *px = triple_to_u32((r, g, b));
-        });
+        buffer.buffer.fill(0u32);
 
         // TODO: detect if any body has achieved escape velocity wrt the center of mass and momentum of the other two
         if window.is_key_pressed(Key::R, minifb::KeyRepeat::No) {
@@ -258,21 +362,39 @@ fn main() {
             println!("new speed factor = {}", speed_factor);
         }
 
-        if window.is_key_pressed(Key::Q, minifb::KeyRepeat::No) {
-            viewport_scale /= 1.1;
-            window_bounds = (
-                (-viewport_scale, -viewport_scale),
-                (viewport_scale, viewport_scale),
-            );
-            println!("new viewport scale = {}", viewport_scale);
+        // if window.is_key_pressed(Key::Q, minifb::KeyRepeat::No) {
+        //     camera.view_scale /= 1.1;
+        //     window_bounds = (
+        //         (-camera.view_scale, -camera.view_scale),
+        //         (camera.view_scale, camera.view_scale),
+        //     );
+        //     println!("new viewport scale = {}", camera.view_scale);
+        // }
+        // if window.is_key_pressed(Key::E, minifb::KeyRepeat::No) {
+        //     camera.view_scale *= 1.1;
+        //     window_bounds = (
+        //         (-camera.view_scale, -camera.view_scale),
+        //         (camera.view_scale, camera.view_scale),
+        //     );
+        //     println!("new viewport scale = {}", camera.view_scale);
+        // }
+        let scroll_value = window.get_scroll_wheel().map(|e| e.1).unwrap_or(0.0);
+        if scroll_value != 0.0 {
+            camera.view_scale /= 1.1.powi(scroll_value.signum() as i32);
         }
-        if window.is_key_pressed(Key::E, minifb::KeyRepeat::No) {
-            viewport_scale *= 1.1;
-            window_bounds = (
-                (-viewport_scale, -viewport_scale),
-                (viewport_scale, viewport_scale),
-            );
-            println!("new viewport scale = {}", viewport_scale);
+
+        if window.get_mouse_down(MouseButton::Middle) {
+            // middle mouse is pressed
+            let new_mouse_pos = window.get_mouse_pos(MouseMode::Pass).unwrap();
+            let new_pos = Vec2::new(new_mouse_pos.0, new_mouse_pos.1);
+            if let Some(last_pos) = last_mouse_pos {
+                let diff = new_pos - last_pos;
+                // actually orbit camera position
+                camera.orbit(diff * camera_orbit_factor);
+            }
+            last_mouse_pos = Some(new_pos);
+        } else {
+            last_mouse_pos = None;
         }
 
         let mut frame_min_dt = max_dt;
@@ -320,33 +442,63 @@ fn main() {
 
             // ~~the smaller the min_dist, the smaller the dt~~
             // the greater the speed, the smaller the dt
+            std::mem::swap(&mut bodies, &mut swap);
+            elapsed_sim_time += dt;
+            elapsed_sim_time_ticker += dt;
+            if elapsed_sim_time_ticker > 1.0 {
+                elapsed_sim_time_ticker -= 1.0;
+
+                for (idx, body) in bodies.iter().enumerate() {
+                    if body_trails[idx].len() >= 99 {
+                        let _ = body_trails[idx].pop_front();
+                    }
+                    body_trails[idx].push_back(body.into());
+                }
+            }
 
             dt = max_dt * (1.0 + speed_factor * max_speed_squared.0).recip();
             frame_min_dt = frame_min_dt.min(dt);
-            std::mem::swap(&mut bodies, &mut swap);
         }
         metaframe_min_dt = metaframe_min_dt.min(frame_min_dt);
         metaframe_elapsed_sim_time += frame_elapsed_sim_time;
 
-        for (idx, body) in bodies.iter().enumerate() {
+        for body in body_trails.iter_mut().flatten() {
+            // project body positions through camera and obtain pixel coords
+
+            let (pu, pv) = camera.project(body.p);
+
             let (px, py) = (
-                ((body.p.x() - window_bounds.0 .0) / (window_bounds.1 .0 - window_bounds.0 .0)
-                    * WINDOW_WIDTH as f32) as usize,
-                ((body.p.y() - window_bounds.0 .1) / (window_bounds.1 .1 - window_bounds.0 .1)
-                    * WINDOW_HEIGHT as f32) as usize,
+                (pu * WINDOW_WIDTH as f32) as usize,
+                (pv * WINDOW_HEIGHT as f32) as usize,
             );
 
-            // println!(
-            //     "{} between {} and {} -> {}",
-            //     body.x, window_bounds.0 .0, window_bounds.1 .0, px
-            // );
             if px >= WINDOW_WIDTH || py >= WINDOW_HEIGHT {
                 continue;
             }
-            if idx == 3 {
+            if body.radius == 0.0 {
+                buffer.buffer[py * WINDOW_WIDTH + px] = body.adjusted_color();
+            } else {
+                blit_circle(&mut buffer, body.radius, px, py, body.adjusted_color());
+            }
+            body.brightness *= 0.99;
+        }
+        for body in bodies.iter() {
+            // project body positions through camera and obtain pixel coords
+
+            let (pu, pv) = camera.project(body.p);
+
+            let (px, py) = (
+                (pu * WINDOW_WIDTH as f32) as usize,
+                (pv * WINDOW_HEIGHT as f32) as usize,
+            );
+
+            if px >= WINDOW_WIDTH || py >= WINDOW_HEIGHT {
+                continue;
+            }
+            if body.radius == 0.0 {
                 buffer.buffer[py * WINDOW_WIDTH + px] = body.color;
             } else {
-                blit_circle(&mut buffer, 1.0, px, py, body.color);
+                blit_circle(&mut buffer, body.radius, px, py, body.color);
             }
         }
         window
