@@ -2,7 +2,7 @@
 
 ## These are the coolest ones
 
-* three_body - has a basic 3d camera and orbit-style camera navigation, though no panning. controls are middle click to rotate, and R to reset the simulation. [ and ] also adjust a weird adaptive timestep simulation parameter thing.
+* three_body - has a basic 3d camera and orbit-style camera navigation ~~, though no~~ and panning. controls are middle click to rotate, and R to reset the simulation. [ and ] also adjust a weird adaptive timestep simulation parameter thing.
 * flatland_pt
 * ants
 * particles (though it gets glitchy at high energy and is inefficient with lots of particles due to no acceleration structure)
