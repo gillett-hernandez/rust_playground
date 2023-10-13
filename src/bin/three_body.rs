@@ -2,6 +2,7 @@ extern crate minifb;
 
 use itertools::Itertools;
 use minifb::{Key, MouseMode, Scale, Window, WindowOptions};
+use num::{traits::real::Real, Num};
 use ordered_float::OrderedFloat;
 use rand::random;
 use rayon::prelude::*;
@@ -15,6 +16,20 @@ use std::f32::consts::{PI, TAU};
 
 const STEPS: usize = 200;
 const GRAVITATIONAL_CONSTANT: f32 = 0.0001;
+
+fn forward_euler_step<const N: usize, F, T>(mut func: F, x: [T; N], dt: T) -> [T; N]
+where
+    F: FnMut([T; N]) -> [T; N],
+    T: Num + Real,
+{
+    // x' = F(x)
+    let mut new_x = x;
+    let xp = func(x);
+    for i in 0..N {
+        new_x[i] = new_x[i] + dt * xp[i];
+    }
+    new_x
+}
 
 #[derive(Copy, Clone, Debug)]
 struct Body {
@@ -65,6 +80,7 @@ fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
     let mut sampler = RandomSampler::new();
 
     let center_radius = 60.0;
+    let mut total_mass = 0.0;
 
     for i in 0..(n - 1) {
         let random_position_vector = random_on_unit_sphere(sampler.draw_2d());
@@ -82,6 +98,7 @@ fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
         collective_momentum = collective_momentum + body.v * body.mass;
 
         bodies.push(body);
+        total_mass += body.mass;
     }
 
     {
@@ -113,14 +130,18 @@ fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
         collective_momentum = collective_momentum + body.v * body.mass;
 
         bodies.push(body);
+        total_mass += body.mass;
     }
 
-    collective_momentum = collective_momentum / n as f32;
+    // collective_momentum = collective_momentum / n as f32;
 
-    // for i in 0..n {
-    //     // bodies[i].vx -= collective_momentum.x() / bodies[i].mass;
-    //     bodies[i].v = bodies[i].v - collective_momentum / bodies[i].mass;
-    // }
+    // to neutralize the drift of the system, we need to determine what the average drift velocity is and then subtract that from every object
+
+    let avg_drift_velocity = collective_momentum / total_mass;
+
+    for i in 0..n {
+        bodies[i].v = bodies[i].v - avg_drift_velocity;
+    }
 }
 
 fn main() {
@@ -140,73 +161,46 @@ fn main() {
     });
 
     if false {
-        let ypp = |y: f32| -y;
+        // xp, x
+        let x0 = [1.0, 0.0];
+        // xpp, xp
+        let xp = |x: [f32; 2]| [-x[1], x[0]];
         let y0 = 0.0f32;
         let yp0 = 1.0f32;
         let dt = 0.01;
-        let target_time = 10.0 * TAU;
+        let target_time = 1.0 * TAU;
         let required_steps = (target_time / dt) as u32;
 
         let solved = |t: f32| t.sin();
 
-        let backward_euler_steps = 5;
-        let mut ypk_forward = yp0;
         let mut ypk_backward = yp0;
-        let mut yk_forward = y0;
         let mut yk_backward = y0;
         let mut t = 0.0;
+
+        let mut x = x0;
+        println!("t, true, forward, backward");
         for _ in 0..required_steps {
-            // yk1 = yk + f(yk)
             t += dt;
-            ypk_forward += dt * ypp(yk_forward);
-            yk_forward += dt * ypk_forward;
 
-            /* // iterative
-            let mut new_ypk = ypk_backward;
-            let mut new_yk = yk_backward;
-            for _ in 0..backward_euler_steps {
-                new_ypk = ypk_backward + dt * ypp(new_yk);
-                new_yk = yk_backward + dt * new_ypk;
-            }
-            ypk_backward = new_ypk;
-            yk_backward = new_yk; */
+            x = forward_euler_step(xp, x, dt);
 
-            /* // second order difeq, harmonic motion
-            // new_ypk = ypk_backward + dt * ypp(new_yk);
-            // new_yk = yk_backward + dt * new_ypk;
-
-            // new_yk = yk_backward + dt * (ypk_backward - dt * new_yk);
-            // new_yk = yk_backward + dt * ypk_backward - dt^2 * new_yk;
-            // new_yk + dt^2 * new_yk = yk_backward + dt * ypk_backward;
-            // new_yk (1 + dt^2) = yk_backward + dt * ypk_backward;
-
-            // new_yk = (yk_backward + dt * ypk_backward) / (1 + dt^2);
-            // new_ypk = ypk_backward - dt * new_yk;
-            */
             let new_yk = (yk_backward + dt * ypk_backward) / (1.0 + dt * dt);
-            let new_ypk = ypk_backward - dt * new_yk;
+            let new_ypk = (ypk_backward - dt * yk_backward) / (1.0 + dt * dt);
 
             yk_backward = new_yk;
             ypk_backward = new_ypk;
 
-            /* //first order difeq, exponential decay yp = -0.5y
-            // new_yk = yk_backward_euler + dt * yp(new_yk);
-            // new_yk = yk_backward_euler - dt * 0.5 * new_yk
-            // new_yk + 0.5 * dt * new_yk = yk_backward_euler
-            // new_yk * (1 + 0.5 * dt) = yk_backward_euler
-            // new_yk = yk_backward_euler / (1 + 0.5 * dt)
-            // yk_backward_euler = yk_backward_euler / (1.0 + 0.5 * dt);
-
-            // yk_backward_euler = new_yk; */
-
             let true_y = solved(t);
             println!(
-                "true: {}, forward: {} (error: {}), backward: {} (error: {})",
+                "{}, {}, {}, {}",
+                t,
                 true_y,
-                yk_forward,
-                (yk_forward - true_y) / true_y,
+                x[1],
+                // (x[1] - true_y).abs() / true_y,
+                // (x[1] - true_y).abs(),
                 yk_backward,
-                (yk_backward - true_y) / true_y,
+                // (yk_backward - true_y).abs() / true_y,
+                // (yk_backward - true_y).abs()
             );
         }
         return;
