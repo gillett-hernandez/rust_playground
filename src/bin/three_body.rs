@@ -1,7 +1,7 @@
 extern crate minifb;
 
 use itertools::Itertools;
-use minifb::{Key, MouseButton, MouseMode, Scale, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 use num::{traits::real::Real, Num};
 use ordered_float::OrderedFloat;
 use rand::random;
@@ -46,10 +46,15 @@ struct OrbitCamera {
     pub view_scale: f32,
     azimuthal_angle: f32,
     zenithal_angle: f32,
+    tf: TangentFrame,
 }
 
 impl OrbitCamera {
     pub fn new(mode: CameraMode, origin: Point3, direction: Vec3, view_scale: f32) -> Self {
+        const UP: Vec3 = Vec3::Z;
+        let right = UP.cross(direction).normalized();
+        let relative_up = right.cross(direction);
+        let tf = TangentFrame::new(right, relative_up, direction);
         OrbitCamera {
             mode,
             origin,
@@ -57,6 +62,7 @@ impl OrbitCamera {
             view_scale,
             azimuthal_angle: 0.0,
             zenithal_angle: 0.0,
+            tf,
         }
     }
 
@@ -73,18 +79,26 @@ impl OrbitCamera {
         let (z_sin, z_cos) = self.zenithal_angle.sin_cos();
 
         self.direction = Vec3::new(a_cos * z_cos, a_sin * z_cos, z_sin);
+
+        const UP: Vec3 = Vec3::Z;
+        let right = UP.cross(self.direction).normalized();
+        let relative_up = right.cross(self.direction);
+        self.tf = TangentFrame::new(right, relative_up, self.direction);
+    }
+
+    pub fn pan(&mut self, pan_by: Vec2) {
+        // move the origin by some amount determined by the view scale, in the direction of the true tangent and bitangents multiplied by pan_by.x() and pan_by.y()
+        let offset_vec = Vec3::new(pan_by.x(), pan_by.y(), 0.0);
+        let actual_offset = self.view_scale * self.tf.to_world(&offset_vec);
+        self.origin = self.origin + actual_offset;
     }
 
     pub fn project(&self, point: Point3) -> (f32, f32) {
         let worldspace_point = point - self.origin;
-        const UP: Vec3 = Vec3::Z;
-        let right = UP.cross(self.direction).normalized();
-        let relative_up = right.cross(self.direction);
-        let tf = TangentFrame::new(right, relative_up, self.direction);
         let (x, y) = match self.mode {
             CameraMode::Projective => todo!(),
             CameraMode::Orthographic => {
-                let local = tf.to_local(&worldspace_point);
+                let local = self.tf.to_local(&worldspace_point);
                 (local.x(), local.y())
             }
         };
@@ -205,7 +219,7 @@ fn initialize_bodies(bodies: &mut Vec<Body>, n: usize) {
         let chosen_body = (random::<u32>() % 3) as usize;
         let angle = TAU * random::<f32>();
         // let speed = random::<f32>() * 1.0 + 0.5;
-        let speed = 1.0;
+        let speed = 0.1;
         let (sin, cos) = angle.sin_cos();
 
         let normal = random_on_unit_sphere(sampler.draw_2d());
@@ -336,6 +350,7 @@ fn main() {
     // let (mut view_azimuthal, mut view_zenithal) = (0.0, 0.0);
     let mut camera = OrbitCamera::new(CameraMode::Orthographic, Point3::ORIGIN, Vec3::X, 250.0);
     let camera_orbit_factor = 0.01;
+    let camera_pan_factor = 0.001;
 
     let mut last_mouse_pos = None;
 
@@ -349,15 +364,19 @@ fn main() {
         buffer.buffer.fill(0u32);
 
         // TODO: detect if any body has achieved escape velocity wrt the center of mass and momentum of the other two
-        if window.is_key_pressed(Key::R, minifb::KeyRepeat::No) {
+        if window.is_key_pressed(Key::R, KeyRepeat::No) {
             initialize_bodies(&mut bodies, n);
         }
 
-        if window.is_key_pressed(Key::LeftBracket, minifb::KeyRepeat::No) {
+        if window.is_key_pressed(Key::Equal, KeyRepeat::No) {
+            camera.origin = Point3::ORIGIN;
+        }
+
+        if window.is_key_pressed(Key::LeftBracket, KeyRepeat::No) {
             speed_factor /= 1.1;
             println!("new speed factor = {}", speed_factor);
         }
-        if window.is_key_pressed(Key::RightBracket, minifb::KeyRepeat::No) {
+        if window.is_key_pressed(Key::RightBracket, KeyRepeat::No) {
             speed_factor *= 1.1;
             println!("new speed factor = {}", speed_factor);
         }
@@ -387,8 +406,14 @@ fn main() {
             // middle mouse is pressed
             let new_mouse_pos = window.get_mouse_pos(MouseMode::Pass).unwrap();
             let new_pos = Vec2::new(new_mouse_pos.0, new_mouse_pos.1);
-            if let Some(last_pos) = last_mouse_pos {
-                let diff = new_pos - last_pos;
+            let diff = if let Some(last_pos) = last_mouse_pos {
+                new_pos - last_pos
+            } else {
+                Vec2::ZERO
+            };
+            if window.is_key_down(Key::LeftShift) | window.is_key_down(Key::RightShift) {
+                camera.pan(diff * camera_pan_factor);
+            } else {
                 // actually orbit camera position
                 camera.orbit(diff * camera_orbit_factor);
             }
