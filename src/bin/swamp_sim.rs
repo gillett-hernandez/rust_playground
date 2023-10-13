@@ -235,7 +235,7 @@ fn main() {
     // except for the ones concentrated around the least time path, because those have similar/correlated phases.
     // TODO: figure out why this doesn't converge on the solution, regardless of the "light" frequency. maybe because frequency should change as the density of the medium does?
 
-    // real answer: 13.1265108586
+    // real answer: [redacted]
 
     let n = 1;
 
